@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<title>Cargo Bot ขนส่งอุปกรณ์</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+<?!= include_('Vision') ?>
+<style>
+  :root {
+    --bg:#f3f5f7; --surface:#ffffff; --line:#d9dee5; --fg:#16202c; --muted:#5d6b7c; --chip:#eef2f6;
+    --accent:#0e6e8c; --accent-fg:#ffffff; --ok:#1f8a4c; --err:#c43d3d;
+    --p1:#2a6fdb; --p2:#d0457a; --p3:#1f8a4c; --p4:#d98a00; --p5:#7a52c7;
+    --font:'IBM Plex Sans Thai','Noto Sans Thai',system-ui,sans-serif; --mono:'IBM Plex Mono',ui-monospace,monospace;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --bg:#0f151c; --surface:#18212b; --line:#2a3644; --fg:#e4eaf1; --muted:#93a1b2; --chip:#223040;
+    --accent:#3ab0d4; --accent-fg:#06222c; --ok:#3fbf73; --err:#ff7a7a;
+    --p1:#6f9dff; --p2:#f07aa6; --p3:#4cc985; --p4:#f2b13f; --p5:#a98bf0; color-scheme:dark; } }
+  :root[data-theme="dark"] {
+    --bg:#0f151c; --surface:#18212b; --line:#2a3644; --fg:#e4eaf1; --muted:#93a1b2; --chip:#223040;
+    --accent:#3ab0d4; --accent-fg:#06222c; --ok:#3fbf73; --err:#ff7a7a;
+    --p1:#6f9dff; --p2:#f07aa6; --p3:#4cc985; --p4:#f2b13f; --p5:#a98bf0; color-scheme:dark; }
+  * { box-sizing:border-box; }
+  [hidden] { display:none !important; }
+  body { margin:0; background:var(--bg); color:var(--fg); font-family:var(--font); font-size:15px; line-height:1.5; padding-inline:16px; padding-block:0 32px; }
+  .wrap { max-width:1280px; margin:0 auto; display:flex; flex-direction:column; gap:14px; }
+  header { display:flex; flex-wrap:wrap; gap:12px; justify-content:space-between; align-items:center; padding-block:16px 0; }
+  header h1 { margin:0; font-size:1.3rem; text-wrap:balance; }
+  .hright { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  .clock { font-family:var(--mono); font-variant-numeric:tabular-nums; font-size:1.05rem; }
+  .clock small { font-family:var(--font); color:var(--muted); font-size:.82rem; margin-left:6px; }
+  .who { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+  .chip { font-size:.82rem; padding:3px 10px; border-radius:999px; background:var(--chip); }
+  .chip.admin { color:var(--accent); font-weight:600; }
+  .tabs, .seg { display:flex; gap:4px; background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:4px; flex-wrap:wrap; }
+  .tabs button, .seg button { border:0; background:transparent; color:var(--muted); font:inherit; font-weight:600; padding:8px 14px; border-radius:7px; cursor:pointer; }
+  .tabs button[aria-selected="true"], .seg button[aria-pressed="true"] { background:var(--accent); color:var(--accent-fg); }
+  :focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  .card { background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:14px 16px; min-width:0; }
+  .card h2 { font-size:.95rem; margin:0 0 10px; }
+  .label { font-size:.8rem; color:var(--muted); margin-bottom:4px; }
+  input[type=text], input[type=email], input[type=number], input[type=password], select { width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--fg); font:inherit; }
+  input.need { border-color:var(--err); }
+  button.b, .btn { font:inherit; font-weight:600; border:1px solid var(--line); background:var(--chip); color:var(--fg); padding:10px 12px; border-radius:8px; cursor:pointer; text-align:center; display:inline-flex; justify-content:center; align-items:center; }
+  button.primary, .btn.primary { background:var(--accent); color:var(--accent-fg); border-color:transparent; }
+  button.danger { background:var(--err); color:#fff; border-color:transparent; }
+  button.sm { padding:5px 10px; font-size:.84rem; }
+  button:disabled { opacity:.6; cursor:wait; }
+  .row { display:flex; gap:8px; } .row > * { flex:1; min-width:0; }
+  .col { display:flex; flex-direction:column; gap:12px; }
+  .fields { display:flex; flex-direction:column; gap:10px; }
+  .note { color:var(--muted); font-size:.85rem; margin:0; }
+  .status { font-size:.85rem; color:var(--muted); margin:2px 0 0; min-height:1.3em; }
+  .status.ok { color:var(--ok); } .status.err { color:var(--err); }
+
+  /* login / setup */
+  .login { min-height:100vh; display:flex; align-items:center; justify-content:center; padding-block:24px; }
+  .login .lcard { width:100%; max-width:420px; display:flex; flex-direction:column; gap:14px; padding:22px; }
+  .filters { display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; margin-top:4px; }
+  .filters > div { min-width:140px; } .filters .grow { flex:1; min-width:180px; }
+  input[type=date], input[type=datetime-local] { width:100%; padding:9px 10px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--fg); font:inherit; }
+  .acts { display:flex; gap:6px; }
+  pre.cfg { margin:0; white-space:pre-wrap; font-size:.8rem; line-height:1.6; }
+  .login h1 { margin:0; font-size:1.3rem; }
+  .login p { margin:0; color:var(--muted); font-size:.88rem; }
+  .login .err { color:var(--err); min-height:1.4em; }
+  .gbtn { display:flex; justify-content:center; min-height:44px; }
+  .or { display:flex; align-items:center; gap:10px; color:var(--muted); font-size:.82rem; }
+  .or::before, .or::after { content:''; flex:1; border-top:1px solid var(--line); }
+  code.token { font-size:.8rem; }
+  .opt { display:flex; gap:8px; align-items:flex-start; font-size:.92rem; }
+  .opt input { margin-top:5px; }
+
+  /* บันทึก */
+  .scan { display:grid; grid-template-columns:minmax(0,460px) minmax(0,1fr); gap:16px; align-items:start; }
+  @media (max-width:860px) { .scan { grid-template-columns:1fr; } }
+  .step { font-weight:700; font-size:.92rem; margin-bottom:8px; }
+  .quick { display:grid; grid-template-columns:repeat(auto-fill,minmax(84px,1fr)); gap:6px; }
+  .pname { font-size:1.6rem; font-weight:700; }
+  .pcode { font-family:var(--mono); color:var(--muted); font-size:.85rem; }
+  .qty { display:grid; grid-template-columns:52px 1fr 52px; gap:8px; margin:10px 0 8px; }
+  .qty input { text-align:center; font-size:1.6rem; font-weight:700; font-family:var(--mono); padding:4px; }
+  .qty button { font-size:1.4rem; padding:0; }
+  .presets { display:flex; gap:6px; margin-bottom:10px; } .presets button { flex:1; padding:6px 4px; font-size:.88rem; }
+  .route { font-size:.88rem; color:var(--muted); margin-bottom:10px; }
+  .msg { padding:14px; border-radius:10px; font-weight:600; text-align:center; }
+  .msg.ok { background:var(--ok); color:#fff; } .msg.err { background:var(--err); color:#fff; }
+  .msg small { display:block; font-weight:400; opacity:.92; }
+  .pic-res { display:grid; grid-template-columns:96px minmax(0,1fr); gap:12px; align-items:start; margin-top:10px; }
+  .pic-res img { width:96px; height:96px; object-fit:cover; border-radius:8px; border:1px solid var(--line); }
+  .guess { font-size:1.2rem; font-weight:700; }
+  .conf { display:inline-block; font-size:.78rem; font-weight:600; padding:2px 8px; border-radius:999px; background:var(--chip); }
+  .conf.hi { color:var(--ok); } .conf.lo { color:var(--err); }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+  .chips button { padding:5px 9px; font-size:.84rem; }
+  .chips .pc { font-family:var(--mono); color:var(--muted); margin-left:4px; font-weight:500; }
+  .teach { display:flex; gap:8px; align-items:center; font-size:.85rem; color:var(--muted); margin-bottom:10px; }
+  ul.hist { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px; }
+  ul.hist li { display:flex; justify-content:space-between; gap:8px; padding:7px 10px; border-radius:8px; background:var(--bg); border:1px solid var(--line); font-size:.88rem; }
+  ul.hist li small { display:block; color:var(--muted); }
+  ul.hist .q { font-family:var(--mono); font-weight:600; white-space:nowrap; }
+
+  /* ผลการขนส่ง */
+  .bar { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; }
+  .upd { color:var(--muted); font-size:.84rem; }
+  .kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; }
+  .kpi .v { font-size:1.8rem; font-weight:700; font-variant-numeric:tabular-nums; line-height:1.2; margin-top:2px; }
+  .kpi .v small { font-size:.85rem; color:var(--muted); font-weight:500; margin-left:4px; }
+  .kpi .v.sm { font-size:1rem; font-family:var(--mono); padding-top:8px; }
+  .prod { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; }
+  .pc { border-top:4px solid var(--c); }
+  .pc .q { font-size:1.7rem; font-weight:700; font-variant-numeric:tabular-nums; }
+  .pc .q small { font-size:.85rem; color:var(--muted); font-weight:500; margin-left:4px; }
+  .pc .m { font-size:.78rem; color:var(--muted); }
+  .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
+  .grid.w { grid-template-columns:minmax(0,2fr) minmax(0,1fr); }
+  @media (max-width:900px) { .grid, .grid.w { grid-template-columns:1fr; } }
+  .chart { position:relative; height:260px; }
+  .scroll { overflow:auto; max-height:380px; }
+  table { width:100%; border-collapse:collapse; font-size:.87rem; }
+  th, td { padding:7px 8px; border-bottom:1px solid var(--line); text-align:left; white-space:nowrap; }
+  th { color:var(--muted); font-size:.76rem; font-weight:600; position:sticky; top:0; background:var(--surface); }
+  td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
+  td.num { font-weight:600; }
+  td input[type=text] { padding:5px 8px; min-width:90px; }
+  .empty { text-align:center; color:var(--muted); padding:16px; }
+
+  /* admin */
+  .box { display:flex; flex-direction:column; gap:8px; padding:12px; margin-bottom:12px; border:1px dashed var(--accent); border-radius:10px; background:var(--bg); }
+  .box.danger { border-color:var(--err); }
+  .form-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:8px; }
+  .check { display:flex; gap:8px; align-items:center; font-size:.9rem; }
+  .on { color:var(--ok); font-weight:600; } .off { color:var(--err); font-weight:600; }
+  .token { font-family:var(--mono); font-size:.84rem; word-break:break-all; background:var(--chip); padding:8px 10px; border-radius:8px; user-select:all; }
+  .db { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:8px; margin:10px 0; }
+  .db div { background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:8px 10px; }
+  .db b { display:block; font-size:1.3rem; font-variant-numeric:tabular-nums; }
+  .db small { color:var(--muted); font-size:.78rem; }
+  a { color:var(--accent); }
+  dialog { border:1px solid var(--line); border-radius:12px; background:var(--surface); color:var(--fg); padding:0; width:min(380px, calc(100vw - 32px)); }
+  dialog::backdrop { background:rgba(0,0,0,.45); }
+  dialog form { display:flex; flex-direction:column; gap:10px; padding:18px; }
+  dialog h2 { margin:0; font-size:1.05rem; }
+</style>
+</head>
+<body>
+
+<!-- เข้าสู่ระบบด้วยอีเมล (ไม่ใช้รหัสผ่าน) -->
+<div class="login" id="loginView" hidden>
+  <div class="card lcard">
+    <h1>Cargo Bot ขนส่งอุปกรณ์</h1>
+    <form class="fields" id="emailForm">
+      <p>เข้าสู่ระบบด้วยอีเมลที่ผู้ดูแลระบบลงทะเบียนไว้</p>
+      <div><label class="label" for="lEmail">อีเมล</label><input type="email" id="lEmail" autocomplete="email" autocapitalize="off" required></div>
+      <button class="b primary" type="submit" id="lSend">เข้าสู่ระบบ</button>
+    </form>
+    <div id="gBox" hidden><div class="or">หรือ</div><div id="gBtn" class="gbtn"></div></div>
+    <div class="err" id="lMsg" role="alert"></div>
+  </div>
+</div>
+
+<div class="wrap" id="appView" hidden>
+  <header>
+    <h1>ระบบบันทึกการขนส่งอุปกรณ์</h1>
+    <div class="hright">
+      <span class="clock" id="clock">--:--:--<small id="clockD"></small></span>
+      <div class="who">
+        <span class="chip" id="whoName">-</span><span class="chip admin" id="whoRole" hidden>ผู้ดูแลระบบ</span>
+        <button class="b sm" type="button" id="logout">ออกจากระบบ</button>
+      </div>
+    </div>
+  </header>
+  <div class="tabs" role="tablist">
+    <button role="tab" data-v="scan" aria-selected="true">บันทึกอุปกรณ์</button>
+    <button role="tab" data-v="dash" aria-selected="false">ผลการขนส่ง</button>
+    <button role="tab" data-v="esp" aria-selected="false">เชื่อมต่อ ESP32</button>
+    <button role="tab" data-v="admin" aria-selected="false" id="tabAdmin" hidden>ผู้ดูแลระบบ</button>
+  </div>
+
+  <!-- บันทึกอุปกรณ์ -->
+  <section id="v-scan" class="scan">
+    <div class="col">
+      <div class="card">
+        <div class="step">1. ข้อมูลการขนส่ง</div>
+        <div class="fields">
+          <div><label class="label" for="mover">ชื่อผู้ขนส่ง</label><input type="text" id="mover" autocomplete="off"></div>
+          <div><label class="label" for="pickup">สถานที่รับ</label><input type="text" id="pickup" autocomplete="off" placeholder="เช่น โกดัง A"></div>
+          <div><label class="label" for="dropoff">สถานที่ส่ง</label><input type="text" id="dropoff" autocomplete="off" placeholder="เช่น ห้องประชุมชั้น 3"></div>
+          <datalist id="placeList"></datalist>
+        </div>
+      </div>
+      <div class="card">
+        <div class="step">2. เลือกอุปกรณ์</div>
+        <div class="status" id="picStatus">กำลังเตรียมระบบจดจำภาพ...</div>
+        <label class="btn primary" style="width:100%;margin-top:6px">ถ่าย / อัปโหลดภาพอุปกรณ์<input type="file" id="picFile" accept="image/*" capture="environment" hidden></label>
+        <div class="pic-res" id="picRes" hidden>
+          <img id="picImg" alt="ภาพที่ถ่าย">
+          <div><div class="guess" id="picGuess">-</div><span class="conf" id="picConf"></span><div class="chips" id="picChips"></div></div>
+        </div>
+        <div class="label" style="margin-top:12px">หรือเลือกด้วยมือ</div>
+        <div class="quick" id="quick"></div>
+      </div>
+      <div class="card" id="pCard" hidden>
+        <div class="step">3. ระบุจำนวน</div>
+        <div class="pname" id="pName">-</div>
+        <div class="pcode" id="pCode">-</div>
+        <div class="qty">
+          <button class="b" type="button" id="minus" aria-label="ลดจำนวน">−</button>
+          <input type="number" id="qty" min="1" max="9999" value="1" aria-label="จำนวน">
+          <button class="b" type="button" id="plus" aria-label="เพิ่มจำนวน">+</button>
+        </div>
+        <div class="presets" id="presets"></div>
+        <div class="route" id="pRoute"></div>
+        <label class="teach" id="teachRow" hidden><input type="checkbox" id="teach" checked> เก็บภาพนี้ไว้ ให้ระบบจดจำอุปกรณ์ได้แม่นขึ้น</label>
+        <div class="row">
+          <button class="b" type="button" id="cancel">ยกเลิก</button>
+          <button class="b primary" type="button" id="save">บันทึกการขนส่ง</button>
+        </div>
+      </div>
+      <div id="msg" hidden></div>
+    </div>
+    <div class="col">
+      <div class="card">
+        <div class="bar" style="margin-bottom:8px"><h2 style="margin:0">ที่ฉันบันทึกในรอบนี้</h2>
+          <span class="upd"><b id="sQty">0</b> ชิ้น · <b id="sTrips">0</b> เที่ยว</span></div>
+        <ul class="hist" id="hist"><li style="color:var(--muted)">ยังไม่มีรายการ</li></ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ผลการขนส่ง -->
+  <section id="v-dash" class="col" hidden>
+    <div class="bar">
+      <div class="seg" id="range">
+        <button data-r="today" aria-pressed="true">วันนี้</button>
+        <button data-r="7d" aria-pressed="false">7 วัน</button>
+        <button data-r="30d" aria-pressed="false">30 วัน</button>
+        <button data-r="all" aria-pressed="false">ทั้งหมด</button>
+      </div>
+      <span class="upd">ข้อมูลจาก Google Sheet ล่าสุด <b id="updated">-</b> · รีเฟรชทุก 15 วินาที</span>
+    </div>
+    <div class="kpis">
+      <div class="card kpi"><div class="label">ขนส่งแล้ว (ช่วงที่เลือก)</div><div class="v"><span id="kQty">-</span><small>ชิ้น</small></div></div>
+      <div class="card kpi"><div class="label">จำนวนเที่ยว</div><div class="v"><span id="kTrips">-</span><small>เที่ยว</small></div></div>
+      <div class="card kpi"><div class="label">ผู้ขนส่ง</div><div class="v"><span id="kMovers">-</span><small>คน</small></div></div>
+      <div class="card kpi"><div class="label">เส้นทาง</div><div class="v"><span id="kRoutes">-</span><small>เส้นทาง</small></div></div>
+      <div class="card kpi"><div class="label">ขนส่งวันนี้</div><div class="v"><span id="kToday">-</span><small>ชิ้น</small></div></div>
+      <div class="card kpi"><div class="label">บันทึกล่าสุดเมื่อ</div><div class="v sm" id="kLast">-</div></div>
+    </div>
+    <div class="prod" id="prodCards"></div>
+    <div class="grid w">
+      <div class="card"><h2>จำนวนชิ้นที่ขนส่งรายวัน 14 วันล่าสุด (แยกตามอุปกรณ์)</h2><div class="chart"><canvas id="cDaily"></canvas></div></div>
+      <div class="card"><h2>สัดส่วนอุปกรณ์ที่ขนส่ง</h2><div class="chart"><canvas id="cShare"></canvas></div></div>
+    </div>
+    <div class="grid">
+      <div class="card"><h2>สรุปตามเส้นทาง</h2><div class="scroll"><table>
+        <thead><tr><th>สถานที่รับ</th><th>สถานที่ส่ง</th><th class="num">เที่ยว</th><th class="num">ชิ้น</th><th>ล่าสุด</th></tr></thead>
+        <tbody id="tRoutes"></tbody></table></div></div>
+      <div class="card"><h2>สรุปตามผู้ขนส่ง</h2><div class="scroll"><table>
+        <thead><tr><th>ผู้ขนส่ง</th><th>รายละเอียด</th><th class="num">เที่ยว</th><th class="num">ชิ้น</th><th>ล่าสุด</th></tr></thead>
+        <tbody id="tMovers"></tbody></table></div></div>
+    </div>
+    <div class="card"><h2>บันทึกการขนส่งล่าสุด</h2><div class="scroll"><table>
+      <thead><tr><th>วันที่</th><th>เวลา</th><th>อุปกรณ์</th><th class="num">จำนวน</th><th>หน่วย</th><th>ผู้ขนส่ง</th><th>สถานที่รับ</th><th>สถานที่ส่ง</th><th>ภาพ</th></tr></thead>
+      <tbody id="tRecent"></tbody></table></div></div>
+  </section>
+
+  <!-- เชื่อมต่อ ESP32 -->
+  <section id="v-esp" class="col" hidden>
+    <div class="card">
+      <h2>ขอ Token สำหรับบอร์ด ESP32</h2>
+      <p class="note">บอร์ดใช้ Token นี้ส่งบันทึกการขนส่งเข้า Google Sheet ในชื่อของคุณ Token แสดงครั้งเดียวตอนขอ ถ้าทำหาย ให้ยกเลิก แล้วขอใหม่ด้วยรหัสบอร์ดเดิม</p>
+      <form class="filters" id="tForm" style="margin-top:10px">
+        <div class="grow"><label class="label" for="tId">รหัสบอร์ด (เว้นว่างให้ระบบตั้งให้ เช่น ESP32-01)</label><input type="text" id="tId" autocomplete="off" maxlength="32"></div>
+        <button class="b primary" type="submit" id="tReq">ขอ Token</button>
+      </form>
+      <div class="status" id="tStatus"></div>
+      <div id="tResult" class="fields" hidden>
+        <div><div class="label">Token ของบอร์ด <b id="tDev">-</b></div><div class="token" id="tToken"></div></div>
+        <div><div class="label">คัดลอกไปวางใน <code>config.h</code> ของบอร์ด</div><pre class="token cfg" id="tCfg"></pre></div>
+        <div class="row" style="max-width:420px">
+          <button class="b" type="button" id="tCopyTok">คัดลอก Token</button>
+          <button class="b primary" type="button" id="tCopyCfg">คัดลอก config.h</button>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <h2 id="tListTitle">บอร์ดของฉัน</h2>
+      <div class="scroll"><table>
+        <thead><tr><th>รหัสบอร์ด</th><th>ชื่อผู้ขนส่ง</th><th id="tOwnerTh" hidden>เจ้าของ</th><th>สถานะ</th><th>ขอเมื่อ</th><th>ติดต่อล่าสุด</th><th></th></tr></thead>
+        <tbody id="tDevices"></tbody></table></div>
+    </div>
+  </section>
+
+  <!-- ผู้ดูแลระบบ -->
+  <section id="v-admin" class="col" hidden>
+    <div class="card">
+      <div class="bar" style="margin-bottom:8px"><h2 style="margin:0">บันทึกการขนส่งของพนักงาน</h2>
+        <button class="b primary sm" type="button" id="mNew">+ เพิ่มรายการ</button></div>
+      <form class="box" id="mForm" hidden>
+        <div class="label" id="mTitle">เพิ่มรายการ</div>
+        <div class="form-grid">
+          <div><label class="label" for="mWhen">วันที่ เวลา</label><input type="datetime-local" id="mWhen"></div>
+          <div><label class="label" for="mCode">อุปกรณ์</label><select id="mCode"></select></div>
+          <div><label class="label" for="mQty">จำนวน</label><input type="number" id="mQty" min="1" max="9999" value="1"></div>
+          <div><label class="label" for="mMover">ผู้ขนส่ง</label><input type="text" id="mMover" list="moverList" autocomplete="off"></div>
+          <div><label class="label" for="mPickup">สถานที่รับ</label><input type="text" id="mPickup" list="placeList" autocomplete="off"></div>
+          <div><label class="label" for="mDropoff">สถานที่ส่ง</label><input type="text" id="mDropoff" list="placeList" autocomplete="off"></div>
+        </div>
+        <datalist id="moverList"></datalist>
+        <div class="row" style="max-width:420px">
+          <button class="b" type="button" id="mCancel">ยกเลิก</button>
+          <button class="b primary" type="submit" id="mSave">บันทึก</button>
+        </div>
+        <div class="status" id="mStatus"></div>
+      </form>
+      <form class="filters" id="mFilter">
+        <div><label class="label" for="fFrom">ตั้งแต่วันที่</label><input type="date" id="fFrom"></div>
+        <div><label class="label" for="fTo">ถึงวันที่</label><input type="date" id="fTo"></div>
+        <div class="grow"><label class="label" for="fQ">ค้นหา (ผู้ขนส่ง / อุปกรณ์ / สถานที่)</label><input type="text" id="fQ" autocomplete="off"></div>
+        <button class="b" type="submit">ค้นหา</button>
+      </form>
+      <div class="upd" id="mCount" style="margin:8px 0">-</div>
+      <div class="scroll"><table>
+        <thead><tr><th>วันที่</th><th>เวลา</th><th>อุปกรณ์</th><th class="num">จำนวน</th><th>ผู้ขนส่ง</th><th>สถานที่รับ</th><th>สถานที่ส่ง</th><th>บันทึกโดย</th><th></th></tr></thead>
+        <tbody id="tMoves"></tbody></table></div>
+    </div>
+    <div class="col">
+      <div class="card">
+        <div class="bar" style="margin-bottom:8px"><h2 style="margin:0">บัญชีผู้ใช้งาน</h2>
+          <button class="b primary sm" type="button" id="uNew">+ เพิ่มบัญชี</button></div>
+        <p class="note" style="margin-bottom:8px">ลงทะเบียนอีเมลอย่างเดียว เจ้าของอีเมลเข้าระบบด้วยรหัสที่ส่งไปทางอีเมล ไม่ต้องตั้งรหัสผ่าน</p>
+        <form class="box" id="uForm" hidden>
+          <div class="form-grid">
+            <div><label class="label" for="uUser">อีเมล</label><input type="email" id="uUser" autocomplete="off" autocapitalize="off"></div>
+            <div><label class="label" for="uName">ชื่อ-นามสกุล</label><input type="text" id="uName" autocomplete="off"></div>
+            <div><label class="label" for="uRole">สิทธิ์</label><select id="uRole"><option value="user">พนักงาน</option><option value="admin">ผู้ดูแลระบบ</option></select></div>
+          </div>
+          <label class="check"><input type="checkbox" id="uActive" checked> เปิดใช้งานบัญชี</label>
+          <div class="row">
+            <button class="b" type="button" id="uCancel">ยกเลิก</button>
+            <button class="b primary" type="submit" id="uSave">บันทึกบัญชี</button>
+          </div>
+          <div class="status" id="uStatus"></div>
+        </form>
+        <div class="scroll"><table>
+          <thead><tr><th>อีเมล</th><th>ชื่อ</th><th>สิทธิ์</th><th>สถานะ</th><th>เข้าระบบล่าสุด</th><th></th></tr></thead>
+          <tbody id="tUsers"></tbody></table></div>
+      </div>
+      <div class="card">
+        <h2>อุปกรณ์ที่ขนส่ง</h2>
+        <form class="box" id="prForm">
+          <div class="form-grid">
+            <div><label class="label" for="prCode">รหัส (A-Z 0-9)</label><input type="text" id="prCode" autocomplete="off" autocapitalize="characters"></div>
+            <div><label class="label" for="prName">ชื่ออุปกรณ์</label><input type="text" id="prName" autocomplete="off"></div>
+            <div><label class="label" for="prUnit">หน่วยนับ</label><input type="text" id="prUnit" value="ชิ้น" autocomplete="off"></div>
+          </div>
+          <button class="b primary" type="submit" id="prAdd">+ เพิ่มอุปกรณ์</button>
+          <div class="status" id="pStatus"></div>
+        </form>
+        <div class="scroll"><table>
+          <thead><tr><th>รหัส</th><th>ชื่อ</th><th>หน่วย</th><th>ใช้งาน</th><th></th></tr></thead>
+          <tbody id="tProducts"></tbody></table></div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+  set(k, v) { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} }
+};
+const newId = () => (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
+function setStatus(id, t, cls) { $(id).textContent = t; $(id).className = 'status' + (cls ? ' ' + cls : ''); }
+
+/* ---------- เรียกเซิร์ฟเวอร์ (Apps Script) ---------- */
+let session = store.get('cargo.session'), me = null;
+let PRODUCTS = [];
+const isAdmin = () => !!me && me.role === 'admin';
+function api(action, params) {
+  const sent = session;
+  return new Promise((resolve, reject) => {
+    google.script.run
+      .withSuccessHandler(r => {
+        if (r && r.ok) return resolve(r);
+        const e = new Error((r && r.message) || 'เกิดข้อผิดพลาด'); e.code = r && r.error;
+        // คำตอบของเซสชันเก่า (ก่อนออกจากระบบ) ไม่ต้องเด้งคนที่เข้าระบบอยู่ตอนนี้ออก
+        if (e.code === 'unauthorized' && action !== 'login' && sent && sent === session) showLogin(e.message);
+        reject(e);
+      })
+      .withFailureHandler(err => reject(new Error((err && err.message) || String(err))))
+      .rpc(action, params || {}, sent);
+  });
+}
+function showOnly(id) { ['loginView', 'appView'].forEach(v => $(v).hidden = v !== id); }
+
+/* ---------- เข้าสู่ระบบด้วยอีเมล (อีเมลต้องลงทะเบียนในชีต Users) ---------- */
+function showLogin(msg) {
+  session = null; me = null; store.set('cargo.session', null);
+  showOnly('loginView'); $('lMsg').textContent = msg || '';
+  $('lEmail').value = store.get('cargo.email') || ''; $('lEmail').focus();
+  loadGoogleButton();
+}
+$('emailForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  $('lSend').disabled = true; $('lMsg').textContent = '';
+  try {
+    const r = await api('emailLogin', { email: $('lEmail').value.trim() });
+    store.set('cargo.email', r.user.email);
+    signedIn(r);
+  } catch (err) { $('lMsg').textContent = err.message; }
+  finally { $('lSend').disabled = false; }
+});
+function signedIn(r) {
+  session = r.session; store.set('cargo.session', session); $('lMsg').textContent = '';
+  start(r.user);
+}
+
+/* ปุ่ม Sign in with Google (แสดงเมื่อใส่ DEFAULT_GOOGLE_CLIENT_ID ใน Code.gs เท่านั้น) */
+let gisReady = null;
+function loadGis() {
+  return gisReady || (gisReady = new Promise((res, rej) => {
+    const s = document.createElement('script'); s.src = 'https://accounts.google.com/gsi/client'; s.async = true;
+    s.onload = res; s.onerror = () => { gisReady = null; rej(new Error('โหลดปุ่ม Google ไม่ได้')); };
+    document.head.appendChild(s);
+  }));
+}
+async function loadGoogleButton() {
+  let cfg;
+  try { cfg = await api('authConfig'); } catch (e) { return; }
+  $('gBox').hidden = !cfg.googleClientId;
+  if (!cfg.googleClientId) return;
+  try {
+    await loadGis();
+    google.accounts.id.initialize({ client_id: cfg.googleClientId, callback: async resp => {
+      $('lMsg').textContent = 'กำลังตรวจสอบบัญชี Google...';
+      try { signedIn(await api('googleLogin', { credential: resp.credential })); } catch (err) { $('lMsg').textContent = err.message; }
+    } });
+    $('gBtn').textContent = '';
+    google.accounts.id.renderButton($('gBtn'), { theme: 'outline', size: 'large', text: 'signin_with', locale: 'th', width: 336 });
+  } catch (e) { $('gBox').hidden = true; }
+}
+$('logout').onclick = () => {
+  api('logout').catch(() => {});
+  try { google.accounts.id.disableAutoSelect(); } catch (e) {}
+  showLogin();
+};
+
+let started = false, lastUser = '';
+async function start(user) {
+  me = user;
+  showOnly('appView');
+  $('whoName').textContent = user.name; $('whoRole').hidden = !isAdmin();   // พนักงานไม่ต้องแสดงสิทธิ์
+  $('tabAdmin').hidden = !isAdmin();
+  if (lastUser && lastUser !== user.email) resetSession();
+  lastUser = user.email;
+  $('mover').value = store.get('cargo.mover.' + user.email) || user.name;
+  $('pickup').value = ''; $('dropoff').value = '';
+  store.set('cargo.pickup', null); store.set('cargo.dropoff', null);   // ล้างค่าที่เวอร์ชันก่อนเคยจำไว้
+  if (view === 'admin' && !isAdmin()) showView('scan'); else showView(view);
+  try { await loadProducts(); } catch (e) { message('err', 'โหลดรายการอุปกรณ์ไม่ได้', e.message); }
+  loadPlaces();
+  if (!started) { started = true; initVision(); }
+}
+(async function boot() {
+  if (session) { try { const r = await api('me'); start(r.user); return; } catch (e) { if (e.code === 'unauthorized') return; } }
+  showLogin();
+})();
+
+/* ---------- clock + tabs ---------- */
+function tick() { const d = new Date();
+  $('clock').firstChild.nodeValue = d.toLocaleTimeString('th-TH', { hour12:false });
+  $('clockD').textContent = d.toLocaleDateString('th-TH', { weekday:'short', day:'numeric', month:'short', year:'numeric' }); }
+tick(); setInterval(tick, 1000);
+let view = 'scan';
+function showView(v) {
+  view = v;
+  document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-selected', x.dataset.v === v));
+  ['scan','dash','esp','admin'].forEach(k => $('v-' + k).hidden = k !== v);
+  if (v === 'esp') renderEsp();
+  if (v === 'dash') renderDash(); if (v === 'admin') renderAdmin();
+}
+document.querySelector('.tabs').addEventListener('click', e => { const b = e.target.closest('button'); if (b) showView(b.dataset.v); });
+
+/* ---------- อุปกรณ์ / สถานที่ ---------- */
+async function loadProducts() {
+  PRODUCTS = (await api('products')).products;
+  renderQuick();
+}
+async function loadPlaces() {
+  try {
+    const r = await api('places'), dl = $('placeList'); dl.textContent = '';
+    r.places.forEach(p => { const o = document.createElement('option'); o.value = p; dl.appendChild(o); });
+  } catch (e) {}
+}
+function renderQuick() {
+  $('quick').textContent = '';
+  PRODUCTS.forEach(p => {
+    const k = document.createElement('button'); k.type = 'button'; k.className = 'b'; k.textContent = p.name;
+    k.onclick = () => { photoImg = null; $('picRes').hidden = true; select(p, 'เลือกเอง', null); }; $('quick').appendChild(k);
+  });
+}
+
+/* ---------- บันทึกอุปกรณ์ ---------- */
+let current = null, sQty = 0, sTrips = 0, audio = null, method = 'เลือกเอง', score = null, photoImg = null;
+function beep(f, ms) { try { audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+  const o = audio.createOscillator(), g = audio.createGain(); g.gain.value = .08; o.frequency.value = f;
+  o.connect(g); g.connect(audio.destination); o.start(); o.stop(audio.currentTime + ms / 1000); } catch (e) {} }
+function message(kind, title, sub) { const m = $('msg'); m.hidden = false; m.className = 'msg ' + kind; m.textContent = title;
+  if (sub) { const s = document.createElement('small'); s.textContent = sub; m.appendChild(s); } }
+function resetSession() { sQty = 0; sTrips = 0; $('sQty').textContent = 0; $('sTrips').textContent = 0;
+  $('hist').innerHTML = '<li style="color:var(--muted)">ยังไม่มีรายการ</li>'; $('msg').hidden = true; }
+const routeText = () => ($('pickup').value.trim() || '?') + ' → ' + ($('dropoff').value.trim() || '?');
+function select(prod, how, sc) {
+  method = how; score = sc; current = prod;
+  $('pName').textContent = prod.name; $('pCode').textContent = 'รหัส ' + prod.code + ' · หน่วย: ' + prod.unit;
+  $('pRoute').textContent = 'เส้นทาง: ' + routeText();
+  $('teachRow').hidden = !(how === 'ภาพถ่าย' && photoImg);
+  $('qty').value = 1; $('msg').hidden = true; $('pCard').hidden = false;
+}
+['pickup', 'dropoff'].forEach(id => $(id).addEventListener('input', () => { $(id).classList.remove('need'); if (current) $('pRoute').textContent = 'เส้นทาง: ' + routeText(); }));
+$('mover').addEventListener('input', () => $('mover').classList.remove('need'));
+const setQty = n => $('qty').value = Math.min(9999, Math.max(1, Math.floor(n) || 1));
+[5, 10, 20, 50].forEach(n => { const b = document.createElement('button'); b.type = 'button'; b.className = 'b'; b.textContent = '+' + n;
+  b.onclick = () => setQty(Number($('qty').value || 0) + n); $('presets').appendChild(b); });
+$('minus').onclick = () => setQty(Number($('qty').value) - 1);
+$('plus').onclick = () => setQty(Number($('qty').value) + 1);
+$('cancel').onclick = () => { current = null; photoImg = null; $('pCard').hidden = true; $('picRes').hidden = true; };
+$('save').onclick = async () => {
+  if (!current) return;
+  const mover = $('mover').value.trim(), pickup = $('pickup').value.trim(), dropoff = $('dropoff').value.trim();
+  const missing = [['mover', mover], ['pickup', pickup], ['dropoff', dropoff]].filter(x => !x[1]).map(x => x[0]);
+  if (missing.length) { missing.forEach(id => $(id).classList.add('need')); $(missing[0]).focus();
+    message('err', 'กรุณากรอกข้อมูลการขนส่งให้ครบ', 'ชื่อผู้ขนส่ง สถานที่รับ และสถานที่ส่ง'); beep(220, 300); return; }
+  const teach = method === 'ภาพถ่าย' && photoImg && $('teach').checked, img = photoImg, prod = current;
+  $('save').disabled = true; $('save').textContent = 'กำลังบันทึกลง Google Sheet...';
+  try {
+    const r = await api('saveMove', { code: prod.code, qty: $('qty').value, mover, pickup, dropoff, method, score, photo: img ? shrink(img, 800) : '', reqId: newId() });
+    store.set('cargo.mover.' + me.email, mover);   // จำเฉพาะชื่อผู้ขนส่ง
+    $('pickup').value = ''; $('dropoff').value = '';   // สถานที่รับ-ส่งต้องกรอกใหม่ทุกครั้ง
+    if (teach) addRef(prod.code, img).catch(() => {});
+    photoImg = null; $('picRes').hidden = true;
+    message('ok', 'บันทึกแล้ว: ' + r.product.name + ' ' + r.qty + ' ' + r.product.unit, r.pickup + ' → ' + r.dropoff + ' · โดย ' + r.mover + ' · ' + r.date + ' เวลา ' + r.time);
+    beep(1320, 110);
+    if (!sTrips) $('hist').textContent = '';
+    sQty += r.qty; sTrips++; $('sQty').textContent = sQty; $('sTrips').textContent = sTrips;
+    const li = document.createElement('li'), a = document.createElement('span'), sm = document.createElement('small');
+    a.textContent = r.time + ' · ' + r.product.name; sm.textContent = r.pickup + ' → ' + r.dropoff + ' · ' + r.mover; a.appendChild(sm);
+    const b = document.createElement('span'); b.className = 'q'; b.textContent = r.qty + ' ' + r.product.unit; li.append(a, b); $('hist').prepend(li);
+    current = null; $('pCard').hidden = true;
+    loadPlaces();
+  } catch (err) { message('err', 'บันทึกไม่สำเร็จ', err.message); beep(220, 300); }
+  finally { $('save').disabled = false; $('save').textContent = 'บันทึกการขนส่ง'; }
+};
+
+/* ---------- ผลการขนส่ง ---------- */
+let range = 'today', dashBusy = false, lastDash = null; const charts = {};
+$('range').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; range = b.dataset.r;
+  [...$('range').children].forEach(x => x.setAttribute('aria-pressed', x === b)); renderDash(); });
+function mk(id, cfg) { if (charts[id]) charts[id].destroy();
+  Chart.defaults.font.family = css('--font'); Chart.defaults.color = css('--muted'); Chart.defaults.borderColor = css('--line');
+  charts[id] = new Chart($(id), cfg); }
+function cell(tr, v, num) { const td = document.createElement('td'); td.textContent = v; if (num) td.className = 'num'; tr.appendChild(td); return td; }
+function fill(id, rows, cols, empty) { const tb = $(id); tb.textContent = '';
+  if (!rows.length) { const tr = document.createElement('tr'), td = document.createElement('td'); td.colSpan = cols; td.className = 'empty'; td.textContent = empty; tr.appendChild(td); tb.appendChild(tr); return; }
+  rows.forEach(f => { const tr = document.createElement('tr'); f(tr); tb.appendChild(tr); }); }
+async function renderDash() {
+  if (view !== 'dash' || !me || dashBusy) return;
+  dashBusy = true;
+  try { lastDash = await api('dashboard', { range }); drawDash(lastDash); }
+  catch (e) { $('updated').textContent = 'โหลดไม่สำเร็จ: ' + e.message; }
+  finally { dashBusy = false; }
+}
+function drawDash(d) {
+  if (!d || view !== 'dash') return;
+  const pal = ['--p1','--p2','--p3','--p4','--p5'].map(css);
+  $('updated').textContent = d.updated;
+  $('kQty').textContent = d.kpi.totalQty.toLocaleString(); $('kTrips').textContent = d.kpi.trips; $('kMovers').textContent = d.kpi.movers;
+  $('kRoutes').textContent = d.kpi.routes; $('kToday').textContent = d.kpi.todayQty.toLocaleString(); $('kLast').textContent = d.kpi.lastMove;
+  const pc = $('prodCards'); pc.textContent = '';
+  d.products.forEach((p, i) => { const c = document.createElement('div'); c.className = 'card pc'; c.style.setProperty('--c', pal[i % pal.length]);
+    const n = document.createElement('b'); n.textContent = p.name;
+    const q = document.createElement('div'); q.className = 'q'; q.textContent = p.qty.toLocaleString(); const u = document.createElement('small'); u.textContent = p.unit; q.appendChild(u);
+    const m = document.createElement('div'); m.className = 'm'; m.textContent = p.trips + ' เที่ยว · ล่าสุด ' + p.last;
+    c.append(n, q, m); pc.appendChild(c); });
+  mk('cDaily', { type:'bar', data:{ labels:d.daily.labels, datasets:d.daily.series.map((s, i) => ({ label:s.name, data:s.data, backgroundColor:pal[i % pal.length], borderRadius:2 })) },
+    options:{ responsive:true, maintainAspectRatio:false, animation:false, plugins:{ legend:{ position:'bottom' } },
+      scales:{ x:{ stacked:true, grid:{ display:false } }, y:{ stacked:true, beginAtZero:true, ticks:{ precision:0 } } } } });
+  const has = d.products.some(p => p.qty);
+  mk('cShare', { type:'doughnut', data:{ labels:d.products.map(p => p.name), datasets:[{ data: has ? d.products.map(p => p.qty) : d.products.map(() => 1),
+      backgroundColor: has ? d.products.map((_, i) => pal[i % pal.length]) : d.products.map(() => css('--line')), borderColor:css('--surface') }] },
+    options:{ responsive:true, maintainAspectRatio:false, animation:false, cutout:'58%', plugins:{ legend:{ position:'bottom' }, tooltip:{ enabled:has } } } });
+  fill('tRoutes', d.routes.map(r => tr => { cell(tr, r.pickup); cell(tr, r.dropoff); cell(tr, r.trips, 1); cell(tr, r.qty.toLocaleString(), 1); cell(tr, r.last); }), 5, 'ยังไม่มีการขนส่งในช่วงนี้');
+  fill('tMovers', d.movers.map(m => tr => { cell(tr, m.mover); cell(tr, Object.entries(m.items).map(([k, v]) => k + ' ' + v).join(', '));
+    cell(tr, m.trips, 1); cell(tr, m.qty.toLocaleString(), 1); cell(tr, m.last); }), 5, 'ยังไม่มีการขนส่งในช่วงนี้');
+  fill('tRecent', d.recent.map(r => tr => { cell(tr, r.date); cell(tr, r.time); cell(tr, r.name); cell(tr, r.qty, 1); cell(tr, r.unit); cell(tr, r.mover);
+    cell(tr, r.pickup || '-'); cell(tr, r.dropoff || '-');
+    const td = document.createElement('td');
+    if (r.photo) { const a = document.createElement('a'); a.href = r.photoUrl; a.target = '_blank'; a.rel = 'noopener';
+      const im = document.createElement('img'); im.src = r.photo; im.alt = r.name; im.style.cssText = 'width:36px;height:36px;object-fit:cover;border-radius:6px;display:block';
+      a.appendChild(im); td.appendChild(a); } else td.textContent = '-';
+    tr.appendChild(td); }), 9, 'ยังไม่มีบันทึก');
+}
+setInterval(() => { if (document.visibilityState === 'visible') renderDash(); }, 15000);
+const redraw = () => drawDash(lastDash);
+try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', redraw); } catch (e) {}
+new MutationObserver(redraw).observe(document.documentElement, { attributes:true, attributeFilter:['data-theme'] });
+
+/* ---------- จดจำอุปกรณ์จากภาพถ่าย ---------- */
+const REFS = [];   // { id, code, name, vec }
+const picStatus = (t, ok) => setStatus('picStatus', t, ok ? 'ok' : '');
+const loadImg = src => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error('เปิดภาพไม่ได้')); i.src = src; });
+const fileToImg = f => new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => loadImg(fr.result).then(res, rej); fr.onerror = rej; fr.readAsDataURL(f); });
+function shrink(img, max) { const w = img.naturalWidth, h = img.naturalHeight, s = Math.min(1, max / Math.max(w, h));
+  const c = document.createElement('canvas'); c.width = Math.round(w * s); c.height = Math.round(h * s);
+  const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height); ctx.drawImage(img, 0, 0, c.width, c.height);
+  return c.toDataURL('image/jpeg', .8); }
+async function addRef(code, img, by) {
+  const p = PRODUCTS.find(x => x.code === code), vec = await CargoVision.embed(img);
+  const r = await api('addRef', { code, vec: CargoVision.vecToB64(vec), thumb: shrink(img, 160), addedBy: by || me.name });
+  REFS.push({ id: r.id, code, name: p ? p.name : code, vec });
+}
+
+/* ไฟล์น้ำหนัก ~6 MB โหลดจาก Google Drive ผ่านเซิร์ฟเวอร์ แล้วเก็บไว้ในเครื่อง (IndexedDB) ครั้งต่อไปไม่ต้องโหลดใหม่ */
+function idb() { return new Promise((res, rej) => { const r = indexedDB.open('cargo', 1);
+  r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
+async function idbGet(k) { try { const db = await idb(); return await new Promise(res => { const q = db.transaction('kv').objectStore('kv').get(k); q.onsuccess = () => res(q.result); q.onerror = () => res(undefined); }); } catch (e) { return undefined; } }
+async function idbPut(k, v) { try { const db = await idb(); const s = db.transaction('kv', 'readwrite').objectStore('kv'); s.clear(); s.put(v, k); } catch (e) {} }
+async function loadModelBuffer() {
+  const info = await api('modelInfo'), key = 'model:' + info.version;
+  const cached = await idbGet(key);
+  if (cached) return cached;
+  let done = 0;
+  const parts = await Promise.all(Array.from({ length: info.chunks }, (_, i) => api('modelChunk', { i }).then(r => {
+    picStatus('กำลังเตรียมระบบจดจำภาพ ' + Math.round(++done / info.chunks * 100) + '%'); return r.data; })));
+  const bin = atob(parts.join('').trim()), u8 = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  idbPut(key, u8.buffer);
+  return u8.buffer;
+}
+async function initVision() {
+  try {
+    const [buf, refs] = await Promise.all([loadModelBuffer(), api('refs')]);
+    await CargoVision.load(window.CARGO_GRAPH, buf);
+    REFS.length = 0;
+    refs.refs.forEach(r => REFS.push({ id: r.id, code: r.code, name: r.name, vec: CargoVision.b64ToVec(r.vec) }));
+    if (!REFS.length)   // ฐานข้อมูลยังว่าง: ใช้ภาพเริ่มต้นโต๊ะ/เก้าอี้
+      for (const code of ['TABLE', 'CHAIR']) if (PRODUCTS.some(p => p.code === code)) await addRef(code, await loadImg(SEED_IMGS[code]), 'ภาพเริ่มต้น');
+    picStatus('ถ่ายภาพเพื่อให้ระบบระบุอุปกรณ์ หรือเลือกด้วยมือด้านล่าง', true);
+  } catch (e) {
+    if (e.code === 'unauthorized') { started = false; if (me) { started = true; initVision(); } return; }   // ออกจากระบบระหว่างโหลด: เริ่มใหม่กับบัญชีปัจจุบัน
+    picStatus('ระบบจดจำภาพใช้ไม่ได้ตอนนี้ (' + e.message + ') กรุณาเลือกอุปกรณ์ด้วยมือ');
+  }
+}
+async function recognizeImg(img) {
+  if (!CargoVision.ready || !REFS.length) { message('err', 'ระบบจดจำภาพยังไม่พร้อม', 'กรุณาเลือกอุปกรณ์ด้วยมือ'); return; }
+  photoImg = img; $('picImg').src = img.src; $('picRes').hidden = false; $('pCard').hidden = true;
+  $('picGuess').textContent = 'กำลังวิเคราะห์ภาพ...'; $('picConf').textContent = ''; $('picChips').textContent = '';
+  await new Promise(r => setTimeout(r, 30));
+  const r = CargoVision.match(await CargoVision.embed(img), REFS);
+  const pct = x => Math.round(x * 100) + '%';
+  $('picGuess').textContent = r.confident ? r.top.name : 'ไม่แน่ใจ อาจเป็น ' + r.top.name;
+  $('picConf').textContent = 'ความคล้าย ' + pct(r.top.score) + (r.confident ? ' · มั่นใจ' : ' · กรุณาเลือกให้ถูก');
+  $('picConf').className = 'conf ' + (r.confident ? 'hi' : 'lo');
+  const sc = {}; r.ranked.forEach(x => sc[x.code] = x.score);
+  PRODUCTS.slice().sort((a, b) => (sc[b.code] || 0) - (sc[a.code] || 0)).forEach(p => {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'b'; b.textContent = p.name;
+    if (sc[p.code] !== undefined) { const s = document.createElement('span'); s.className = 'pc'; s.textContent = pct(sc[p.code]); b.appendChild(s); }
+    b.onclick = () => select(p, 'ภาพถ่าย', sc[p.code] !== undefined ? sc[p.code] : null); $('picChips').appendChild(b);
+  });
+  const top = PRODUCTS.find(p => p.code === r.top.code);
+  if (r.confident && top) { beep(880, 90); select(top, 'ภาพถ่าย', r.top.score); } else beep(500, 150);
+}
+$('picFile').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) fileToImg(f).then(recognizeImg).catch(err => message('err', err.message)); });
+
+/* ---------- เชื่อมต่อ ESP32: ขอ / ยกเลิก Token ---------- */
+let apiUrl = '';
+async function renderEsp() {
+  try {
+    const r = await api('myDevices');
+    apiUrl = r.apiUrl || apiUrl;
+    $('tListTitle').textContent = isAdmin() ? 'บอร์ดทั้งหมดในระบบ' : 'บอร์ดของฉัน';
+    $('tOwnerTh').hidden = !isAdmin();
+    fill('tDevices', r.devices.map(d => tr => {
+      cell(tr, d.deviceId); cell(tr, d.name);
+      if (isAdmin()) cell(tr, d.owner || '-');
+      onOff(tr, d.active, 'ใช้งาน', 'ยกเลิกแล้ว'); cell(tr, d.createdAt || '-'); cell(tr, d.lastSeen || 'ยังไม่เคยเชื่อมต่อ');
+      const td = cell(tr, '');
+      if (d.active) td.appendChild(delBtnText('ยกเลิก Token', async () => {
+        try { await api('revokeToken', { deviceId: d.deviceId }); setStatus('tStatus', 'ยกเลิก Token ของ ' + d.deviceId + ' แล้ว บอร์ดนี้จะส่งข้อมูลไม่ได้อีก', 'ok'); renderEsp(); }
+        catch (err) { setStatus('tStatus', err.message, 'err'); }
+      }));
+    }), isAdmin() ? 7 : 6, 'ยังไม่มีบอร์ด กดขอ Token ด้านบน');
+  } catch (e) { setStatus('tStatus', 'โหลดรายการบอร์ดไม่สำเร็จ: ' + e.message, 'err'); }
+}
+function configText(deviceId, token) {
+  return [
+    '#pragma once',
+    '#define WIFI_SSID     "ชื่อ WiFi"',
+    '#define WIFI_PASS     "รหัส WiFi"',
+    '#define API_URL       "' + (apiUrl || 'https://script.google.com/macros/s/XXXX/exec') + '"',
+    '#define DEVICE_ID     "' + deviceId + '"',
+    '#define DEVICE_TOKEN  "' + token + '"',
+    '#define DEFAULT_MOVER ""      // "" = ใช้ชื่อ ' + me.name,
+    '#define DEFAULT_PICKUP  ""',
+    '#define DEFAULT_DROPOFF ""'
+  ].join('\n');
+}
+$('tForm').addEventListener('submit', async e => {
+  e.preventDefault(); $('tReq').disabled = true; $('tResult').hidden = true; setStatus('tStatus', 'กำลังสร้าง Token...');
+  try {
+    const r = await api('requestToken', { deviceId: $('tId').value.trim() });
+    apiUrl = r.apiUrl || apiUrl;
+    $('tDev').textContent = r.deviceId; $('tToken').textContent = r.token; $('tCfg').textContent = configText(r.deviceId, r.token);
+    $('tResult').hidden = false; $('tId').value = '';
+    setStatus('tStatus', 'สร้าง Token ของ ' + r.deviceId + ' แล้ว คัดลอกเก็บไว้ตอนนี้ ระบบจะไม่แสดงอีก', 'ok');
+    renderEsp();
+  } catch (err) { setStatus('tStatus', err.message, 'err'); }
+  finally { $('tReq').disabled = false; }
+});
+async function copyText(el, button) {
+  const t = el.textContent, old = button.textContent;
+  try { await navigator.clipboard.writeText(t); }
+  catch (e) {   // บางเบราว์เซอร์ไม่ให้ใช้ clipboard ใน iframe: เลือกข้อความแล้วคัดลอกแบบเดิม
+    const r = document.createRange(); r.selectNodeContents(el); const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+    document.execCommand('copy');
+  }
+  button.textContent = 'คัดลอกแล้ว'; setTimeout(() => { button.textContent = old; }, 1500);
+}
+$('tCopyTok').onclick = () => copyText($('tToken'), $('tCopyTok'));
+$('tCopyCfg').onclick = () => copyText($('tCfg'), $('tCopyCfg'));
+function delBtnText(label, onConfirm) { const b = delBtn(onConfirm); b.textContent = label; b.dataset.label = label; return b; }
+
+/* ---------- ผู้ดูแลระบบ ---------- */
+function onOff(tr, on, yes, no) { const td = cell(tr, on ? yes : no); td.className = on ? 'on' : 'off'; }
+function btn(text, onclick, cls) { const b = document.createElement('button'); b.type = 'button'; b.className = 'b sm' + (cls ? ' ' + cls : ''); b.textContent = text; b.onclick = onclick; return b; }
+/* ปุ่มลบที่ต้องกดซ้ำเพื่อยืนยัน */
+function delBtn(onConfirm) {
+  const b = btn('ลบ', async () => {
+    if (!b.classList.contains('danger')) { b.classList.add('danger'); b.textContent = 'ยืนยัน' + (b.dataset.label || 'ลบ'); setTimeout(() => { b.classList.remove('danger'); b.textContent = b.dataset.label || 'ลบ'; }, 3000); return; }
+    b.disabled = true;
+    try { await onConfirm(); } finally { b.disabled = false; }
+  });
+  return b;
+}
+const ROLE_TH = { user: 'พนักงาน', admin: 'ผู้ดูแลระบบ' };
+const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+
+async function renderAdmin() {
+  if (!isAdmin()) return;
+  if (!$('fFrom').value) { $('fFrom').value = ymd(new Date(Date.now() - 6 * 86400000)); $('fTo').value = ymd(new Date()); }
+  loadMoves();
+  try {
+    const [u, p] = await Promise.all([api('users'), api('allProducts')]);
+    const ml = $('moverList'); ml.textContent = '';
+    u.users.forEach(x => { const o = document.createElement('option'); o.value = x.name; ml.appendChild(o); });
+    fill('tUsers', u.users.map(x => tr => {
+      cell(tr, x.email); cell(tr, x.name); cell(tr, ROLE_TH[x.role] + (x.fixed ? ' (ถาวร)' : ''));
+      onOff(tr, x.active, 'ใช้งาน', 'ปิด'); cell(tr, x.lastLogin || '-');
+      const acts = document.createElement('div'); acts.className = 'acts';
+      acts.appendChild(btn('แก้ไข', () => openUser(x)));
+      if (!x.fixed && x.email !== me.email) acts.appendChild(delBtn(async () => {
+        try { await api('deleteUser', { email: x.email }); setStatus('uStatus', 'ลบบัญชี ' + x.email + ' แล้ว', 'ok'); renderAdmin(); }
+        catch (err) { setStatus('uStatus', err.message, 'err'); }
+      }));
+      cell(tr, '').appendChild(acts);
+    }), 6, 'ยังไม่มีบัญชี');
+    fill('tProducts', p.products.map(x => tr => {
+      cell(tr, x.code);
+      const name = document.createElement('input'); name.type = 'text'; name.value = x.name; name.setAttribute('aria-label', 'ชื่อ ' + x.code); cell(tr, '').appendChild(name);
+      const unit = document.createElement('input'); unit.type = 'text'; unit.value = x.unit; unit.setAttribute('aria-label', 'หน่วย ' + x.code); cell(tr, '').appendChild(unit);
+      const on = document.createElement('input'); on.type = 'checkbox'; on.checked = x.active; on.setAttribute('aria-label', 'ใช้งาน ' + x.code); cell(tr, '').appendChild(on);
+      cell(tr, '').appendChild(btn('บันทึก', async ev => {
+        ev.target.disabled = true;
+        try { await api('saveProduct', { code: x.code, name: name.value, unit: unit.value, active: on.checked }); setStatus('pStatus', 'บันทึก ' + x.code + ' แล้ว', 'ok'); await loadProducts(); }
+        catch (err) { setStatus('pStatus', err.message, 'err'); }
+        finally { ev.target.disabled = false; }
+      }));
+    }), 5, 'ยังไม่มีอุปกรณ์');
+  } catch (e) { setStatus('uStatus', 'โหลดข้อมูลไม่สำเร็จ: ' + e.message, 'err'); }
+}
+
+/* บันทึกการขนส่งของพนักงาน: ค้นหา / เพิ่ม / แก้ไข / ลบ */
+async function loadMoves() {
+  $('mCount').textContent = 'กำลังโหลดจาก Google Sheet...';
+  try {
+    const r = await api('moves', { from: $('fFrom').value, to: $('fTo').value, q: $('fQ').value });
+    const total = r.moves.reduce((s, m) => s + m.qty, 0);
+    $('mCount').textContent = r.moves.length + ' รายการ · รวม ' + total.toLocaleString() + ' ชิ้น' + (r.moves.length >= 500 ? ' (แสดง 500 รายการล่าสุด)' : '');
+    fill('tMoves', r.moves.map(m => tr => {
+      cell(tr, m.date); cell(tr, m.time); cell(tr, m.name); cell(tr, m.qty + ' ' + m.unit, 1); cell(tr, m.mover);
+      cell(tr, m.pickup || '-'); cell(tr, m.dropoff || '-'); cell(tr, m.source.replace(/^web:|^admin:/, ''));
+      const acts = document.createElement('div'); acts.className = 'acts';
+      acts.appendChild(btn('แก้ไข', () => openMove(m)));
+      acts.appendChild(delBtn(async () => {
+        try { await api('deleteMove', { id: m.id }); setStatus('mStatus', 'ลบรายการแล้ว', 'ok'); lastDash = null; loadMoves(); }
+        catch (err) { $('mCount').textContent = err.message; }
+      }));
+      cell(tr, '').appendChild(acts);
+    }), 9, 'ไม่มีรายการในช่วงนี้');
+  } catch (e) { $('mCount').textContent = 'โหลดไม่สำเร็จ: ' + e.message; }
+}
+$('mFilter').addEventListener('submit', e => { e.preventDefault(); loadMoves(); });
+
+let editingMove = null;
+function openMove(m) {
+  editingMove = m || null;
+  const sel = $('mCode'); sel.textContent = '';
+  PRODUCTS.forEach(p => { const o = document.createElement('option'); o.value = p.code; o.textContent = p.name + ' (' + p.unit + ')'; sel.appendChild(o); });
+  if (m && !PRODUCTS.some(p => p.code === m.code)) { const o = document.createElement('option'); o.value = m.code; o.textContent = m.name; sel.appendChild(o); }
+  const now = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  $('mTitle').textContent = m ? 'แก้ไขรายการ' : 'เพิ่มรายการ';
+  $('mWhen').value = m ? m.when : now; sel.value = m ? m.code : (PRODUCTS[0] || {}).code || '';
+  $('mQty').value = m ? m.qty : 1; $('mMover').value = m ? m.mover : '';
+  $('mPickup').value = m ? m.pickup : ''; $('mDropoff').value = m ? m.dropoff : '';
+  setStatus('mStatus', ''); $('mForm').hidden = false; $('mMover').focus();
+}
+$('mNew').onclick = () => openMove(null);
+$('mCancel').onclick = () => { $('mForm').hidden = true; };
+$('mForm').addEventListener('submit', async e => {
+  e.preventDefault(); $('mSave').disabled = true;
+  const data = { when: $('mWhen').value, code: $('mCode').value, qty: $('mQty').value, mover: $('mMover').value, pickup: $('mPickup').value, dropoff: $('mDropoff').value };
+  try {
+    if (editingMove) await api('updateMove', Object.assign({ id: editingMove.id }, data));
+    else await api('addMove', data);
+    $('mForm').hidden = true; setStatus('mStatus', ''); lastDash = null;
+    $('mCount').textContent = editingMove ? 'แก้ไขรายการแล้ว' : 'เพิ่มรายการแล้ว';
+    loadMoves(); loadPlaces();
+  } catch (err) { setStatus('mStatus', err.message, 'err'); }
+  finally { $('mSave').disabled = false; }
+});
+
+let editingUser = null;
+function openUser(u) {
+  editingUser = u || null;
+  $('uForm').hidden = false; setStatus('uStatus', '');
+  $('uUser').value = u ? u.email : ''; $('uUser').disabled = !!u;
+  $('uName').value = u ? u.name : ''; $('uRole').value = u ? u.role : 'user';
+  $('uActive').checked = u ? u.active : true;
+  $('uRole').disabled = $('uActive').disabled = !!(u && u.fixed);
+  (u ? $('uName') : $('uUser')).focus();
+}
+$('uNew').onclick = () => openUser(null);
+$('uCancel').onclick = () => { $('uForm').hidden = true; };
+$('uForm').addEventListener('submit', async e => {
+  e.preventDefault(); $('uSave').disabled = true;
+  try {
+    await api('saveUser', { isNew: !editingUser, email: $('uUser').value, name: $('uName').value, role: $('uRole').value, active: $('uActive').checked });
+    $('uForm').hidden = true; setStatus('uStatus', 'บันทึกบัญชีแล้ว', 'ok'); await renderAdmin();
+    if (editingUser && editingUser.email === me.email) { me.name = $('uName').value.trim(); $('whoName').textContent = me.name; }
+  } catch (err) { setStatus('uStatus', err.message, 'err'); }
+  finally { $('uSave').disabled = false; }
+});
+$('prForm').addEventListener('submit', async e => {
+  e.preventDefault(); $('prAdd').disabled = true;
+  try {
+    const r = await api('addProduct', { code: $('prCode').value, name: $('prName').value, unit: $('prUnit').value });
+    setStatus('pStatus', 'เพิ่ม ' + r.product.name + ' แล้ว', 'ok'); $('prCode').value = ''; $('prName').value = ''; $('prUnit').value = 'ชิ้น';
+    await loadProducts(); renderAdmin();
+  } catch (err) { setStatus('pStatus', err.message, 'err'); }
+  finally { $('prAdd').disabled = false; }
+});
+</script>
+</body>
+</html>

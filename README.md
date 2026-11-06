@@ -1,2 +1,111 @@
-# Cargo
+# Cargo Bot — ระบบบันทึกการขนส่งอุปกรณ์
 
+```
+ หน้าแอป (URL ของ Web app) ── google.script.run ──┐
+                                                  ├──> Google Apps Script ──> Google Sheet "Database Cargo (ระบบบันทึกการขนส่ง)"
+ บอร์ด ESP32 ──────────────── HTTPS + Token ──────┘                     └─> Google Drive (ภาพถ่าย, ไฟล์จดจำภาพ)
+```
+
+**ฐานข้อมูล:** https://docs.google.com/spreadsheets/d/1_8C6v41tTDqwMaEhVT1ZM1j2VzEI-aZS3PfTtegj4Ko
+(ตั้งไว้ใน `DEFAULT_SPREADSHEET_ID` ใน [gas/Code.gs](gas/Code.gs))
+
+| ไฟล์ | หน้าที่ |
+|---|---|
+| [gas/Code.gs](gas/Code.gs) | เซิร์ฟเวอร์: เข้าสู่ระบบ, Token ของ ESP32, อ่าน/เขียน Google Sheet |
+| [gas/Index.html](gas/Index.html) | หน้าแอป |
+| [gas/Vision.html](gas/Vision.html) | ตัวจดจำอุปกรณ์จากภาพถ่าย |
+| [model/cargo_model_weights.b64.txt](model/cargo_model_weights.b64.txt) | ไฟล์ของตัวจดจำภาพ (5.9 MB) อัปโหลดไว้ใน Google Drive |
+| [esp32/CargoStation/](esp32/CargoStation/) | เฟิร์มแวร์บอร์ด ESP32 |
+| [dev/preview.js](dev/preview.js) | รันหน้าแอปบนเครื่องเพื่อทดลอง |
+| [dev/dump_schema.js](dev/dump_schema.js), [dev/build_db.py](dev/build_db.py) | สร้างไฟล์ฐานข้อมูลเปล่า (.xlsx) จากโครงสร้างใน Code.gs |
+
+## เข้าสู่ระบบ
+
+ใส่อีเมลที่ลงทะเบียนในชีต `Users` แล้วกด **เข้าสู่ระบบ** ไม่ต้องใช้รหัสผ่านหรือรหัสยืนยัน
+
+- **ผู้ดูแลระบบถาวร:** `phatthachada.k@gmail.com` (`ADMIN_EMAILS` ใน Code.gs) ลดสิทธิ์ ปิด หรือลบบัญชีนี้ไม่ได้
+- อีเมลอื่นต้องให้ผู้ดูแลเพิ่มในแท็บ **ผู้ดูแลระบบ > บัญชีผู้ใช้งาน** ก่อน
+- เซสชันหมดอายุเมื่อไม่ได้ใช้งาน 6 ชั่วโมง
+
+> **ข้อควรรู้ด้านความปลอดภัย:** คนที่รู้อีเมลที่ลงทะเบียนไว้ จะเข้าระบบในชื่อนั้นได้ เหมาะกับการใช้งานภายในองค์กรที่ไว้ใจกัน ถ้าต้องการยืนยันตัวตนจริง ให้ใส่ `DEFAULT_GOOGLE_CLIENT_ID` ใน Code.gs เพื่อเปิดปุ่ม Sign in with Google
+
+## สิทธิ์และเมนู
+
+| เมนู | พนักงาน | ผู้ดูแลระบบ |
+|---|:-:|:-:|
+| **บันทึกอุปกรณ์**: ชื่อผู้ขนส่ง (ระบบจำไว้ให้), สถานที่รับ, สถานที่ส่ง (กรอกใหม่ทุกครั้ง) → ถ่ายภาพหรือเลือกอุปกรณ์ → จำนวน → บันทึก | ✓ | ✓ |
+| **ผลการขนส่ง**: สรุปตามวัน, อุปกรณ์, เส้นทาง, ผู้ขนส่ง | ✓ | ✓ |
+| **เชื่อมต่อ ESP32**: ขอ Token ให้บอร์ดของตัวเอง, ดูสถานะบอร์ด, ยกเลิก Token | ✓ (ของตัวเอง) | ✓ (ทุกบอร์ด) |
+| **ผู้ดูแลระบบ**: จัดการบันทึกการขนส่งของพนักงาน (ค้นหา/เพิ่ม/แก้ไข/ลบ), บัญชี, อุปกรณ์ | | ✓ |
+
+## เชื่อมต่อบอร์ด ESP32
+
+1. เข้าระบบ แล้วไปที่เมนู **เชื่อมต่อ ESP32**
+2. กด **ขอ Token** (ระบุรหัสบอร์ดเองได้ หรือเว้นว่างให้ระบบตั้งให้ เช่น `ESP32-01`)
+3. กด **คัดลอก config.h** แล้ววางเป็นไฟล์ `esp32/CargoStation/config.h` จากนั้นใส่ชื่อและรหัส WiFi
+4. Upload เฟิร์มแวร์ขึ้นบอร์ด (ต้องใช้บอร์ด **esp32 (Espressif)** และไลบรารี **ArduinoJson 7.x**)
+
+สิ่งที่ควรรู้:
+- บันทึกจากบอร์ดจะใช้ชื่อของเจ้าของ Token เป็นผู้ขนส่ง
+- Token แสดงแค่ครั้งเดียว ถ้าทำหาย ให้กดยกเลิก แล้วขอใหม่ด้วยรหัสบอร์ดเดิม
+- ถ้าบัญชีของเจ้าของถูกปิด Token ของบอร์ดนั้นจะใช้ไม่ได้ทันที
+- ขอ Token ที่ใช้งานอยู่พร้อมกันได้ไม่เกิน 5 อันต่อบัญชี
+- คู่มือต่อขาและวิธีใช้บอร์ดอยู่ในคอมเมนต์ต้นไฟล์ [CargoStation.ino](esp32/CargoStation/CargoStation.ino)
+
+API ที่บอร์ดเรียกคือ `POST <URL /exec>` โดยส่ง body เป็น JSON ซึ่งต้องมี `token` และ `action` เสมอ
+
+| action | ใช้ทำอะไร |
+|---|---|
+| `ping` | ตรวจว่าเชื่อมต่อได้ |
+| `heartbeat` | ส่งสถานะบอร์ด |
+| `products` | ขอรายการอุปกรณ์ |
+| `saveMove` | บันทึกการขนส่ง: `code`, `qty`, `pickup`, `dropoff`, `reqId` |
+
+## ฐานข้อมูล Google Sheet
+
+ไฟล์ **Database Cargo (ระบบบันทึกการขนส่ง)** มีทุกชีตและฟิลด์พร้อมใช้งาน:
+- ตั้งบัญชีผู้ดูแลไว้แล้ว
+- มีอุปกรณ์เริ่มต้น 5 รายการ
+- มีชีต **คำอธิบายฟิลด์** อธิบายทุกฟิลด์เป็นภาษาไทยพร้อมตัวอย่าง
+
+ถ้าต้องการสร้างหรือตรวจฟิลด์อีกครั้ง ให้รันฟังก์ชัน `setup` ในหน้าแก้ไขสคริปต์ ข้อมูลเดิมไม่หาย
+
+| ชีต | ฟิลด์ |
+|---|---|
+| **Moves** (บันทึกการขนส่ง) | Timestamp, Code, Name, Qty, Unit, Mover, Pickup, Dropoff, Method, Score, Source, Photo, ReqId |
+| **Users** (บัญชีผู้ใช้งาน) | Email, Name, Role (`user` = พนักงาน / `admin` = ผู้ดูแลระบบ), Active, LastLogin, CreatedAt |
+| **Products** (อุปกรณ์ที่ขนส่ง) | Code, Name, Unit, Active |
+| **Devices** (บอร์ด ESP32 และ Token) | DeviceId, Name, Role, TokenHash, Active, LastSeen, Firmware, Info, CreatedAt, Owner |
+| **Refs** (ภาพที่ใช้จดจำอุปกรณ์) | Id, Code, Name, Vec, Thumb, AddedBy, Timestamp |
+
+สร้างไฟล์ฐานข้อมูลเปล่าใหม่ได้จากโครงสร้างใน Code.gs:
+
+```sh
+node dev/dump_schema.js > schema.json
+python dev/build_db.py schema.json "Database Cargo.xlsx"    # อัปโหลดขึ้น Google Drive แล้วเปิดเป็น Google Sheet
+```
+
+## ติดตั้ง
+
+1. ไปที่ https://script.google.com แล้วกด **New project** ด้วยบัญชี `phatthachada.k@gmail.com` ซึ่งเป็นเจ้าของ Sheet ฐานข้อมูล
+2. สร้างไฟล์ในโปรเจกต์ให้ชื่อตรงกับในโฟลเดอร์ [gas/](gas/) แล้ววางโค้ดลงไป
+   - `Code.gs`
+   - `Index` (ใช้ปุ่ม + > HTML)
+   - `Vision` (ใช้ปุ่ม + > HTML)
+3. อัปโหลด `model/cargo_model_weights.b64.txt` ขึ้น Google Drive ของบัญชีเดียวกัน โดยไม่ต้องเปลี่ยนชื่อไฟล์
+4. **Deploy > New deployment > Web app**
+   - Execute as: **Me**
+   - Who has access: **Anyone**
+   - กดอนุญาตสิทธิ์
+5. เปิด URL `/exec` แล้วเข้าระบบด้วย `phatthachada.k@gmail.com` จากนั้นเพิ่มอีเมลพนักงานในแท็บ **ผู้ดูแลระบบ**
+
+> แก้โค้ดแล้วต้องไปที่ **Deploy > Manage deployments > Edit > Version: New version** ทุกครั้ง
+
+## ทดลองบนเครื่อง
+
+```sh
+node dev/preview.js      # เปิด http://localhost:8080
+```
+
+- ใช้ Google Sheet จำลองในหน่วยความจำ ไม่ได้เขียนลงไฟล์จริง และปิดโปรแกรมแล้วข้อมูลหาย
+- API สำหรับทดสอบบอร์ดอยู่ที่ `http://localhost:8080/exec`
