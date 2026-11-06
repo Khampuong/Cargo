@@ -64,6 +64,12 @@
   input[type=date], input[type=datetime-local] { width:100%; padding:9px 10px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--fg); font:inherit; }
   .acts { display:flex; gap:6px; }
   pre.cfg { margin:0; white-space:pre-wrap; font-size:.8rem; line-height:1.6; }
+  .assign { margin-bottom:12px; }
+  .achips { display:flex; flex-direction:column; gap:6px; }
+  .achip { text-align:left; display:block; width:100%; padding:8px 12px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--fg); font:inherit; cursor:pointer; }
+  .achip b { display:block; }
+  .achip small { color:var(--muted); }
+  .achip[aria-pressed="true"] { border-color:var(--accent); box-shadow:0 0 0 2px var(--accent) inset; }
   .login h1 { margin:0; font-size:1.3rem; }
   .login p { margin:0; color:var(--muted); font-size:.88rem; }
   .login .err { color:var(--err); min-height:1.4em; }
@@ -185,11 +191,15 @@
     <div class="col">
       <div class="card">
         <div class="step">1. ข้อมูลการขนส่ง</div>
+        <div id="assignBox" class="assign" hidden>
+          <div class="label">งานที่ได้รับมอบหมาย (กดเพื่อใช้สถานที่รับ-ส่งนี้)</div>
+          <div class="achips" id="assignList"></div>
+        </div>
         <div class="fields">
           <div><label class="label" for="mover">ชื่อผู้ขนส่ง</label><input type="text" id="mover" autocomplete="off"></div>
-          <div><label class="label" for="pickup">สถานที่รับ</label><input type="text" id="pickup" autocomplete="off" placeholder="เช่น โกดัง A"></div>
-          <div><label class="label" for="dropoff">สถานที่ส่ง</label><input type="text" id="dropoff" autocomplete="off" placeholder="เช่น ห้องประชุมชั้น 3"></div>
-          <datalist id="placeList"></datalist>
+          <div><label class="label" for="pickup">สถานที่รับ</label><input type="text" id="pickup" list="pickupList" autocomplete="off" placeholder="เช่น โกดัง A"></div>
+          <div><label class="label" for="dropoff">สถานที่ส่ง</label><input type="text" id="dropoff" list="dropoffList" autocomplete="off" placeholder="เช่น ห้องประชุมชั้น 3"></div>
+          <datalist id="pickupList"></datalist><datalist id="dropoffList"></datalist>
         </div>
       </div>
       <div class="card">
@@ -298,6 +308,55 @@
   <!-- ผู้ดูแลระบบ -->
   <section id="v-admin" class="col" hidden>
     <div class="card">
+      <div class="bar" style="margin-bottom:8px"><h2 style="margin:0">มอบหมายสถานที่รับ-ส่งให้พนักงาน</h2>
+        <button class="b primary sm" type="button" id="aNew">+ มอบหมายงาน</button></div>
+      <form class="box" id="aForm" hidden>
+        <div class="label" id="aTitle">มอบหมายงาน</div>
+        <div class="form-grid">
+          <div><label class="label" for="aEmail">พนักงาน</label><select id="aEmail"></select></div>
+          <div><label class="label" for="aPickup">สถานที่รับ</label><input type="text" id="aPickup" list="pickupList" autocomplete="off"></div>
+          <div><label class="label" for="aDropoff">สถานที่ส่ง</label><input type="text" id="aDropoff" list="dropoffList" autocomplete="off"></div>
+          <div><label class="label" for="aNote">หมายเหตุ (ไม่บังคับ)</label><input type="text" id="aNote" autocomplete="off" maxlength="300"></div>
+        </div>
+        <label class="check" id="aDoneRow" hidden><input type="checkbox" id="aDone"> งานนี้เสร็จแล้ว (พนักงานจะไม่เห็นงานนี้อีก)</label>
+        <div class="row" style="max-width:420px">
+          <button class="b" type="button" id="aCancel">ยกเลิก</button>
+          <button class="b primary" type="submit" id="aSave">บันทึก</button>
+        </div>
+        <div class="status" id="aStatus"></div>
+      </form>
+      <div class="seg" id="aFilter" style="display:inline-flex;margin-bottom:8px">
+        <button type="button" data-s="open" aria-pressed="true">กำลังทำ</button>
+        <button type="button" data-s="done" aria-pressed="false">เสร็จแล้ว</button>
+        <button type="button" data-s="" aria-pressed="false">ทั้งหมด</button>
+      </div>
+      <div class="scroll"><table>
+        <thead><tr><th>พนักงาน</th><th>สถานที่รับ</th><th>สถานที่ส่ง</th><th>หมายเหตุ</th><th>สถานะ</th><th class="num">ขนแล้ว</th><th>มอบหมายเมื่อ</th><th></th></tr></thead>
+        <tbody id="tAssign"></tbody></table></div>
+    </div>
+    <div class="card">
+      <div class="bar" style="margin-bottom:8px"><h2 style="margin:0">สถานที่รับ / สถานที่ส่ง</h2>
+        <button class="b primary sm" type="button" id="plNew">+ เพิ่มสถานที่</button></div>
+      <p class="note" style="margin-bottom:8px">รายการนี้จะขึ้นเป็นตัวเลือกให้พนักงานในช่องสถานที่รับ-ส่ง และในฟอร์มมอบหมายงาน</p>
+      <form class="box" id="plForm" hidden>
+        <div class="label" id="plTitle">เพิ่มสถานที่</div>
+        <div class="form-grid">
+          <div><label class="label" for="plName">ชื่อสถานที่</label><input type="text" id="plName" autocomplete="off" maxlength="200"></div>
+          <div><label class="label" for="plType">ใช้เป็น</label><select id="plType">
+            <option value="both">ทั้งสถานที่รับและสถานที่ส่ง</option><option value="pickup">สถานที่รับ</option><option value="dropoff">สถานที่ส่ง</option></select></div>
+        </div>
+        <label class="check"><input type="checkbox" id="plActive" checked> ใช้งาน (ปิดแล้วจะไม่ขึ้นเป็นตัวเลือก)</label>
+        <div class="row" style="max-width:420px">
+          <button class="b" type="button" id="plCancel">ยกเลิก</button>
+          <button class="b primary" type="submit" id="plSave">บันทึก</button>
+        </div>
+        <div class="status" id="plStatus"></div>
+      </form>
+      <div class="scroll"><table>
+        <thead><tr><th>ชื่อสถานที่</th><th>ใช้เป็น</th><th>สถานะ</th><th>เพิ่มเมื่อ</th><th></th></tr></thead>
+        <tbody id="tPlaces"></tbody></table></div>
+    </div>
+    <div class="card">
       <div class="bar" style="margin-bottom:8px"><h2 style="margin:0">บันทึกการขนส่งของพนักงาน</h2>
         <button class="b primary sm" type="button" id="mNew">+ เพิ่มรายการ</button></div>
       <form class="box" id="mForm" hidden>
@@ -307,8 +366,8 @@
           <div><label class="label" for="mCode">อุปกรณ์</label><select id="mCode"></select></div>
           <div><label class="label" for="mQty">จำนวน</label><input type="number" id="mQty" min="1" max="9999" value="1"></div>
           <div><label class="label" for="mMover">ผู้ขนส่ง</label><input type="text" id="mMover" list="moverList" autocomplete="off"></div>
-          <div><label class="label" for="mPickup">สถานที่รับ</label><input type="text" id="mPickup" list="placeList" autocomplete="off"></div>
-          <div><label class="label" for="mDropoff">สถานที่ส่ง</label><input type="text" id="mDropoff" list="placeList" autocomplete="off"></div>
+          <div><label class="label" for="mPickup">สถานที่รับ</label><input type="text" id="mPickup" list="pickupList" autocomplete="off"></div>
+          <div><label class="label" for="mDropoff">สถานที่ส่ง</label><input type="text" id="mDropoff" list="dropoffList" autocomplete="off"></div>
         </div>
         <datalist id="moverList"></datalist>
         <div class="row" style="max-width:420px">
@@ -332,7 +391,7 @@
       <div class="card">
         <div class="bar" style="margin-bottom:8px"><h2 style="margin:0">บัญชีผู้ใช้งาน</h2>
           <button class="b primary sm" type="button" id="uNew">+ เพิ่มบัญชี</button></div>
-        <p class="note" style="margin-bottom:8px">ลงทะเบียนอีเมลอย่างเดียว เจ้าของอีเมลเข้าระบบด้วยรหัสที่ส่งไปทางอีเมล ไม่ต้องตั้งรหัสผ่าน</p>
+        <p class="note" style="margin-bottom:8px">ลงทะเบียนอีเมลอย่างเดียว เจ้าของอีเมลใช้อีเมลนี้เข้าสู่ระบบได้ทันที ไม่ต้องตั้งรหัสผ่าน</p>
         <form class="box" id="uForm" hidden>
           <div class="form-grid">
             <div><label class="label" for="uUser">อีเมล</label><input type="email" id="uUser" autocomplete="off" autocapitalize="off"></div>
@@ -466,6 +525,7 @@ async function start(user) {
   if (view === 'admin' && !isAdmin()) showView('scan'); else showView(view);
   try { await loadProducts(); } catch (e) { message('err', 'โหลดรายการอุปกรณ์ไม่ได้', e.message); }
   loadPlaces();
+  selectedAssign = null; loadAssignments();
   if (!started) { started = true; initVision(); }
 }
 (async function boot() {
@@ -495,8 +555,11 @@ async function loadProducts() {
 }
 async function loadPlaces() {
   try {
-    const r = await api('places'), dl = $('placeList'); dl.textContent = '';
-    r.places.forEach(p => { const o = document.createElement('option'); o.value = p; dl.appendChild(o); });
+    const r = await api('places');
+    [['pickupList', r.pickups], ['dropoffList', r.dropoffs]].forEach(([id, names]) => {
+      const dl = $(id); dl.textContent = '';
+      names.forEach(n => { const o = document.createElement('option'); o.value = n; dl.appendChild(o); });
+    });
   } catch (e) {}
 }
 function renderQuick() {
@@ -524,7 +587,39 @@ function select(prod, how, sc) {
   $('teachRow').hidden = !(how === 'ภาพถ่าย' && photoImg);
   $('qty').value = 1; $('msg').hidden = true; $('pCard').hidden = false;
 }
-['pickup', 'dropoff'].forEach(id => $(id).addEventListener('input', () => { $(id).classList.remove('need'); if (current) $('pRoute').textContent = 'เส้นทาง: ' + routeText(); }));
+['pickup', 'dropoff'].forEach(id => $(id).addEventListener('input', () => {
+  $(id).classList.remove('need'); if (current) $('pRoute').textContent = 'เส้นทาง: ' + routeText();
+  // แก้สถานที่เองจนไม่ตรงกับงานที่เลือก = ไม่ใช้งานที่มอบหมายนั้นแล้ว
+  const a = myAssigns.find(x => x.id === selectedAssign);
+  if (a && ($('pickup').value.trim() !== a.pickup || $('dropoff').value.trim() !== a.dropoff)) selectAssign(null);
+}));
+
+/* งานที่ผู้ดูแลมอบหมาย: กดเพื่อกรอกสถานที่รับ-ส่งให้ */
+let myAssigns = [], selectedAssign = null;
+async function loadAssignments() {
+  try { myAssigns = (await api('myAssignments')).assignments; } catch (e) { myAssigns = []; }
+  if (!myAssigns.some(a => a.id === selectedAssign)) selectedAssign = null;
+  const box = $('assignList'); box.textContent = '';
+  myAssigns.forEach(a => {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'achip'; b.dataset.id = a.id;
+    const t = document.createElement('b'); t.textContent = a.pickup + ' → ' + a.dropoff;
+    b.appendChild(t);
+    if (a.note) { const s = document.createElement('small'); s.textContent = a.note; b.appendChild(s); }
+    b.onclick = () => selectAssign(selectedAssign === a.id ? null : a);
+    box.appendChild(b);
+  });
+  $('assignBox').hidden = !myAssigns.length;
+  selectAssign(myAssigns.find(a => a.id === selectedAssign) || null);
+}
+function selectAssign(a) {
+  selectedAssign = a ? a.id : null;
+  document.querySelectorAll('#assignList .achip').forEach(b => b.setAttribute('aria-pressed', b.dataset.id === selectedAssign));
+  if (a) {
+    $('pickup').value = a.pickup; $('dropoff').value = a.dropoff;
+    $('pickup').classList.remove('need'); $('dropoff').classList.remove('need');
+    if (current) $('pRoute').textContent = 'เส้นทาง: ' + routeText();
+  }
+}
 $('mover').addEventListener('input', () => $('mover').classList.remove('need'));
 const setQty = n => $('qty').value = Math.min(9999, Math.max(1, Math.floor(n) || 1));
 [5, 10, 20, 50].forEach(n => { const b = document.createElement('button'); b.type = 'button'; b.className = 'b'; b.textContent = '+' + n;
@@ -541,7 +636,8 @@ $('save').onclick = async () => {
   const teach = method === 'ภาพถ่าย' && photoImg && $('teach').checked, img = photoImg, prod = current;
   $('save').disabled = true; $('save').textContent = 'กำลังบันทึกลง Google Sheet...';
   try {
-    const r = await api('saveMove', { code: prod.code, qty: $('qty').value, mover, pickup, dropoff, method, score, photo: img ? shrink(img, 800) : '', reqId: newId() });
+    const r = await api('saveMove', { code: prod.code, qty: $('qty').value, mover, pickup, dropoff, method, score, photo: img ? shrink(img, 800) : '', reqId: newId(), assignId: selectedAssign || '' });
+    selectAssign(null);
     store.set('cargo.mover.' + me.email, mover);   // จำเฉพาะชื่อผู้ขนส่ง
     $('pickup').value = ''; $('dropoff').value = '';   // สถานที่รับ-ส่งต้องกรอกใหม่ทุกครั้ง
     if (teach) addRef(prod.code, img).catch(() => {});
@@ -755,11 +851,14 @@ const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0
 async function renderAdmin() {
   if (!isAdmin()) return;
   if (!$('fFrom').value) { $('fFrom').value = ymd(new Date(Date.now() - 6 * 86400000)); $('fTo').value = ymd(new Date()); }
-  loadMoves();
+  loadMoves(); loadAssignAdmin(); loadPlacesAdmin();
   try {
     const [u, p] = await Promise.all([api('users'), api('allProducts')]);
     const ml = $('moverList'); ml.textContent = '';
     u.users.forEach(x => { const o = document.createElement('option'); o.value = x.name; ml.appendChild(o); });
+    const sel = $('aEmail'), cur = sel.value; sel.textContent = '';
+    u.users.filter(x => x.active).forEach(x => { const o = document.createElement('option'); o.value = x.email; o.textContent = x.name + ' (' + x.email + ')'; sel.appendChild(o); });
+    if (cur) sel.value = cur;
     fill('tUsers', u.users.map(x => tr => {
       cell(tr, x.email); cell(tr, x.name); cell(tr, ROLE_TH[x.role] + (x.fixed ? ' (ถาวร)' : ''));
       onOff(tr, x.active, 'ใช้งาน', 'ปิด'); cell(tr, x.lastLogin || '-');
@@ -785,6 +884,91 @@ async function renderAdmin() {
     }), 5, 'ยังไม่มีอุปกรณ์');
   } catch (e) { setStatus('uStatus', 'โหลดข้อมูลไม่สำเร็จ: ' + e.message, 'err'); }
 }
+
+/* สถานที่รับ / สถานที่ส่ง: เพิ่ม / แก้ไข / ลบ */
+const PLACE_TH = { pickup: 'สถานที่รับ', dropoff: 'สถานที่ส่ง', both: 'รับและส่ง' };
+let editingPlace = null;
+async function loadPlacesAdmin() {
+  try {
+    const r = await api('allPlaces');
+    fill('tPlaces', r.places.map(x => tr => {
+      cell(tr, x.name); cell(tr, PLACE_TH[x.type]); onOff(tr, x.active, 'ใช้งาน', 'ปิด'); cell(tr, x.createdAt || '-');
+      const acts = document.createElement('div'); acts.className = 'acts';
+      acts.appendChild(btn('แก้ไข', () => openPlace(x)));
+      acts.appendChild(delBtn(async () => {
+        try { await api('deletePlace', { id: x.id }); setStatus('plStatus', 'ลบ "' + x.name + '" แล้ว', 'ok'); loadPlacesAdmin(); loadPlaces(); }
+        catch (err) { setStatus('plStatus', err.message, 'err'); }
+      }));
+      cell(tr, '').appendChild(acts);
+    }), 5, 'ยังไม่มีสถานที่ กด + เพิ่มสถานที่');
+  } catch (e) { setStatus('plStatus', 'โหลดสถานที่ไม่สำเร็จ: ' + e.message, 'err'); }
+}
+function openPlace(x) {
+  editingPlace = x || null;
+  $('plTitle').textContent = x ? 'แก้ไขสถานที่' : 'เพิ่มสถานที่';
+  $('plName').value = x ? x.name : ''; $('plType').value = x ? x.type : 'both'; $('plActive').checked = x ? x.active : true;
+  setStatus('plStatus', ''); $('plForm').hidden = false; $('plName').focus();
+}
+$('plNew').onclick = () => openPlace(null);
+$('plCancel').onclick = () => { $('plForm').hidden = true; };
+$('plForm').addEventListener('submit', async e => {
+  e.preventDefault(); $('plSave').disabled = true;
+  try {
+    await api('savePlace', { id: editingPlace ? editingPlace.id : '', name: $('plName').value, type: $('plType').value, active: $('plActive').checked });
+    setStatus('plStatus', (editingPlace ? 'แก้ไข' : 'เพิ่ม') + ' "' + $('plName').value.trim() + '" แล้ว', 'ok');
+    if (editingPlace) $('plForm').hidden = true;
+    else { $('plName').value = ''; $('plName').focus(); }   // เพิ่มต่อได้ทันที
+    loadPlacesAdmin(); loadPlaces();
+  } catch (err) { setStatus('plStatus', err.message, 'err'); }
+  finally { $('plSave').disabled = false; }
+});
+
+/* มอบหมายสถานที่รับ-ส่งให้พนักงาน */
+let assignFilter = 'open', editingAssign = null;
+async function loadAssignAdmin() {
+  try {
+    const r = await api('assignments', { status: assignFilter });
+    fill('tAssign', r.assignments.map(a => tr => {
+      cell(tr, a.name); cell(tr, a.pickup); cell(tr, a.dropoff); cell(tr, a.note || '-');
+      onOff(tr, a.status === 'open', 'กำลังทำ', 'เสร็จแล้ว');
+      cell(tr, a.trips + ' เที่ยว · ' + a.qty + ' ชิ้น', 1); cell(tr, a.createdAt);
+      const acts = document.createElement('div'); acts.className = 'acts';
+      acts.appendChild(btn('แก้ไข', () => openAssign(a)));
+      acts.appendChild(delBtn(async () => {
+        try { await api('deleteAssignment', { id: a.id }); setStatus('aStatus', 'ลบงานแล้ว', 'ok'); loadAssignAdmin(); }
+        catch (err) { setStatus('aStatus', err.message, 'err'); }
+      }));
+      cell(tr, '').appendChild(acts);
+    }), 8, assignFilter === 'open' ? 'ยังไม่มีงานที่กำลังทำ' : 'ไม่มีรายการ');
+  } catch (e) { setStatus('aStatus', 'โหลดงานไม่สำเร็จ: ' + e.message, 'err'); }
+}
+$('aFilter').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  assignFilter = b.dataset.s; [...$('aFilter').children].forEach(x => x.setAttribute('aria-pressed', x === b));
+  loadAssignAdmin();
+});
+function openAssign(a) {
+  editingAssign = a || null;
+  $('aTitle').textContent = a ? 'แก้ไขงานที่มอบหมาย' : 'มอบหมายงาน';
+  if (a) $('aEmail').value = a.email;
+  $('aEmail').disabled = !!a;
+  $('aPickup').value = a ? a.pickup : ''; $('aDropoff').value = a ? a.dropoff : ''; $('aNote').value = a ? a.note : '';
+  $('aDoneRow').hidden = !a; $('aDone').checked = !!a && a.status === 'done';
+  setStatus('aStatus', ''); $('aForm').hidden = false; $('aPickup').focus();
+}
+$('aNew').onclick = () => openAssign(null);
+$('aCancel').onclick = () => { $('aForm').hidden = true; };
+$('aForm').addEventListener('submit', async e => {
+  e.preventDefault(); $('aSave').disabled = true;
+  try {
+    await api('saveAssignment', { id: editingAssign ? editingAssign.id : '', email: $('aEmail').value, pickup: $('aPickup').value,
+      dropoff: $('aDropoff').value, note: $('aNote').value, status: $('aDone').checked ? 'done' : 'open' });
+    $('aForm').hidden = true;
+    setStatus('aStatus', editingAssign ? 'บันทึกการแก้ไขแล้ว' : 'มอบหมายงานให้ ' + $('aEmail').selectedOptions[0].textContent + ' แล้ว', 'ok');
+    loadAssignAdmin(); loadAssignments();
+  } catch (err) { setStatus('aStatus', err.message, 'err'); }
+  finally { $('aSave').disabled = false; }
+});
 
 /* บันทึกการขนส่งของพนักงาน: ค้นหา / เพิ่ม / แก้ไข / ลบ */
 async function loadMoves() {

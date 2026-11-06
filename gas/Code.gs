@@ -29,7 +29,9 @@ const MAX_TOKENS_PER_USER = 5;       // จำนวน Token ESP32 ที่เ
 
 const SHEETS = {
   Products: ['Code', 'Name', 'Unit', 'Active'],
-  Moves: ['Timestamp', 'Code', 'Name', 'Qty', 'Unit', 'Mover', 'Pickup', 'Dropoff', 'Method', 'Score', 'Source', 'Photo', 'ReqId'],
+  Moves: ['Timestamp', 'Code', 'Name', 'Qty', 'Unit', 'Mover', 'Pickup', 'Dropoff', 'Method', 'Score', 'Source', 'Photo', 'ReqId', 'AssignId'],
+  Assignments: ['Id', 'Email', 'Pickup', 'Dropoff', 'Note', 'Status', 'CreatedAt', 'CreatedBy', 'UpdatedAt'],
+  Places: ['Id', 'Name', 'Type', 'Active', 'CreatedAt', 'CreatedBy'],
   Users: ['Email', 'Name', 'Role', 'Active', 'LastLogin', 'CreatedAt'],
   Devices: ['DeviceId', 'Name', 'Role', 'TokenHash', 'Active', 'LastSeen', 'Firmware', 'Info', 'CreatedAt', 'Owner'],
   Refs: ['Id', 'Code', 'Name', 'Vec', 'Thumb', 'AddedBy', 'Timestamp']
@@ -51,7 +53,27 @@ const FIELD_DOCS = {
     Score: ['ความคล้ายของภาพถ่าย (%)', '73'],
     Source: ['ผู้บันทึก: web:อีเมล / admin:อีเมล / รหัสบอร์ด ESP32', 'web:somchai@cargo.co'],
     Photo: ['ลิงก์ภาพถ่ายใน Google Drive', 'https://drive.google.com/...'],
-    ReqId: ['รหัสรายการ (ไม่ซ้ำ ใช้แก้ไข/ลบ)', 'm_3f9a1c...']
+    ReqId: ['รหัสรายการ (ไม่ซ้ำ ใช้แก้ไข/ลบ)', 'm_3f9a1c...'],
+    AssignId: ['งานที่มอบหมาย (อ้างอิง Assignments.Id) ว่าง = ไม่ได้มาจากงานที่มอบหมาย', 'a_51c0e2...']
+  }],
+  Places: ['สถานที่รับ / สถานที่ส่ง (ตัวเลือกในฟอร์ม)', {
+    Id: ['รหัสสถานที่', 'p_9c1e0a...'],
+    Name: ['ชื่อสถานที่', 'โกดัง A'],
+    Type: ['ประเภท: pickup = สถานที่รับ, dropoff = สถานที่ส่ง, both = ใช้ได้ทั้งสองแบบ', 'pickup'],
+    Active: ['ใช้งานอยู่ (TRUE/FALSE)', 'TRUE'],
+    CreatedAt: ['วันที่เพิ่ม', '07/11/2026 08:00:00'],
+    CreatedBy: ['ผู้ดูแลที่เพิ่ม', 'phatthachada.k@gmail.com']
+  }],
+  Assignments: ['งานที่มอบหมาย (สถานที่รับ-ส่งของพนักงาน)', {
+    Id: ['รหัสงาน', 'a_51c0e2...'],
+    Email: ['อีเมลพนักงานที่ได้รับมอบหมาย', 'somchai@cargo.co'],
+    Pickup: ['สถานที่รับ', 'โกดัง A'],
+    Dropoff: ['สถานที่ส่ง', 'ห้องประชุมชั้น 3'],
+    Note: ['หมายเหตุจากผู้ดูแล', 'ส่งก่อน 10 โมง'],
+    Status: ['สถานะ: open = กำลังทำ, done = เสร็จแล้ว', 'open'],
+    CreatedAt: ['วันที่มอบหมาย', '07/11/2026 08:00:00'],
+    CreatedBy: ['ผู้ดูแลที่มอบหมาย', 'phatthachada.k@gmail.com'],
+    UpdatedAt: ['แก้ไขล่าสุด', '07/11/2026 08:30:00']
   }],
   Users: ['บัญชีผู้ใช้งาน', {
     Email: ['อีเมลที่ใช้เข้าสู่ระบบ', 'somchai@cargo.co'],
@@ -100,7 +122,7 @@ const ROLES = {
   device: ['ping', 'heartbeat', 'products', 'lookup', 'saveMove'],
   web: ['ping', 'products', 'lookup', 'saveMove', 'dashboard'],
   user: ['ping', 'me', 'logout', 'products', 'lookup', 'places', 'saveMove', 'dashboard',
-    'refs', 'addRef', 'modelInfo', 'modelChunk', 'myDevices', 'requestToken', 'revokeToken'],
+    'refs', 'addRef', 'modelInfo', 'modelChunk', 'myDevices', 'requestToken', 'revokeToken', 'myAssignments'],
   admin: ['*']
 };
 const ROLE_TH = { user: 'พนักงาน', admin: 'ผู้ดูแลระบบ' };
@@ -116,7 +138,10 @@ const ACTIONS = {
   logout: p => { CacheService.getScriptCache().remove('ses:' + p.session); return {}; },
   products: () => ({ products: getProducts_() }),
   lookup: p => ({ product: findProduct_(p.code) }),
-  places: () => ({ places: getPlaces_() }),
+  places: () => getPlaces_(),
+  allPlaces: () => ({ places: listPlaces_() }),
+  savePlace: savePlace_,
+  deletePlace: deletePlace_,
   saveMove: saveMove_,
   dashboard: p => getDashboardData_(String(p.range || 'today')),
   refs: p => ({ refs: getRefs_(p.code) }),
@@ -125,10 +150,14 @@ const ACTIONS = {
   modelInfo: modelInfo_,
   modelChunk: p => ({ data: modelText_().substr(Math.max(0, Math.floor(Number(p.i) || 0)) * MODEL_CHUNK, MODEL_CHUNK) }),
   // ESP32: ผู้ใช้ขอ Token ของตัวเอง (ผู้ดูแลเห็นและปิดได้ทุกเครื่อง)
+  myAssignments: (p, who) => ({ assignments: listAssignments_({ email: who.email, status: 'open' }) }),
   myDevices: (p, who) => ({ devices: listDevices_().filter(d => who.role === 'admin' || d.owner === who.email), apiUrl: apiUrl_() }),
   requestToken: requestToken_,
   revokeToken: revokeToken_,
   // ผู้ดูแลระบบ
+  assignments: p => ({ assignments: listAssignments_(p) }),
+  saveAssignment: saveAssignment_,
+  deleteAssignment: deleteAssignment_,
   moves: p => ({ moves: listMoves_(p) }),
   addMove: addMove_,
   updateMove: updateMove_,
@@ -173,10 +202,20 @@ function include_(name) {
   return HtmlService.createHtmlOutputFromFile(name).getContent();
 }
 
+/* เพิ่มชีต/ฟิลด์ใหม่ให้ Google Sheet อัตโนมัติเมื่อโครงสร้างใน SHEETS เปลี่ยน (ตรวจครั้งเดียวต่อเวอร์ชัน) */
+function ensureSchema_() {
+  const props = PropertiesService.getScriptProperties();
+  const ver = sha256_(JSON.stringify(SHEETS)).slice(0, 12) + ':' + dbId_();
+  if (props.getProperty('SCHEMA_VERSION') === ver) return;
+  setup();
+  props.setProperty('SCHEMA_VERSION', ver);
+}
+
 function handle_(p) {
   try {
     const action = String(p.action || '');
     if (!ACTIONS[action]) fail_('unknown_action', 'ไม่รู้จักคำสั่ง "' + action + '"');
+    ensureSchema_();
     let who = null;
     if (PUBLIC.indexOf(action) < 0) {
       who = p.session ? session_(p.session) : auth_(p.token);
@@ -216,7 +255,7 @@ function auth_(token) {
     const owner = findUser_(row.Owner);
     if (!owner || !isOn_(owner.Active)) fail_('unauthorized', 'บัญชีเจ้าของ Token นี้ถูกปิดใช้งาน');
   }
-  const who = { kind: 'token', deviceId: String(row.DeviceId), name: String(row.Name || row.DeviceId), role: String(row.Role || 'device') };
+  const who = { kind: 'token', deviceId: String(row.DeviceId), name: String(row.Name || row.DeviceId), role: String(row.Role || 'device'), owner: String(row.Owner || '') };
   cache.put(key, JSON.stringify(who), 300);
   return who;
 }
@@ -497,7 +536,18 @@ function saveMove_(p, who) {
   // ไม่ส่งชื่อผู้ขนส่งมา: หน้าเว็บใช้ชื่อบัญชี, ESP32 ใช้ชื่ออุปกรณ์
   const mover = String(p.mover || '').trim().slice(0, 100) || (who.kind === 'user' || who.role === 'device' ? who.name : '');
   if (!mover) fail_('no_mover', 'กรุณาใส่ชื่อผู้ขนส่ง');
-  const pickup = String(p.pickup || '').trim().slice(0, 200), dropoff = String(p.dropoff || '').trim().slice(0, 200);
+  let pickup = String(p.pickup || '').trim().slice(0, 200), dropoff = String(p.dropoff || '').trim().slice(0, 200);
+  // งานที่มอบหมาย: หน้าเว็บส่ง assignId มา / บอร์ด ESP32 ที่ไม่ส่งสถานที่ ใช้งานล่าสุดของเจ้าของบอร์ด
+  let assign = null;
+  const ownerEmail = who.kind === 'user' ? who.email : String(who.owner || '');
+  if (p.assignId) {
+    assign = findAssignment_(p.assignId);
+    if (assign.Email !== ownerEmail && who.role !== 'admin') fail_('forbidden', 'งานนี้ไม่ได้มอบหมายให้คุณ');
+  } else if (who.kind === 'token' && ownerEmail && (!pickup || !dropoff)) {
+    assign = listAssignments_({ email: ownerEmail, status: 'open' })[0] || null;
+    if (assign) assign = findAssignment_(assign.id);
+  }
+  if (assign) { pickup = pickup || String(assign.Pickup); dropoff = dropoff || String(assign.Dropoff); }
   if (who.kind === 'user' && (!pickup || !dropoff)) fail_('no_place', 'กรุณาใส่สถานที่รับและสถานที่ส่ง');
   const method = String(p.method || '').trim() || (who.role === 'device' ? 'สแกน QR' : 'เลือกเอง');
   const score = p.score === undefined || p.score === null || p.score === '' ? '' : Math.round(Number(p.score) * 100);
@@ -517,7 +567,7 @@ function saveMove_(p, who) {
     appendRow_('Moves', {
       Timestamp: t, Code: product.code, Name: product.name, Qty: qty, Unit: product.unit,
       Mover: text_(mover), Pickup: text_(pickup), Dropoff: text_(dropoff), Method: text_(method), Score: score,
-      Source: text_(who.deviceId), Photo: photo, ReqId: reqId
+      Source: text_(who.deviceId), Photo: photo, ReqId: reqId, AssignId: assign ? String(assign.Id) : ''
     });
     const res = { product: product, qty: qty, mover: mover, pickup: pickup, dropoff: dropoff, method: method, score: score, date: fmt_(t, 'dd/MM/yyyy'), time: fmt_(t, 'HH:mm:ss') };
     if (reqId) cache.put('req:' + reqId, JSON.stringify(res), 21600);
@@ -614,14 +664,120 @@ function getDashboardData_(range) {
   };
 }
 
-/* สถานที่ที่เคยใช้ (ล่าสุดก่อน) ไว้เป็นตัวเลือกในฟอร์ม */
+/* ---------- สถานที่รับ / สถานที่ส่ง (ผู้ดูแลกำหนดในชีต Places) ---------- */
+const PLACE_TYPES = { pickup: 'สถานที่รับ', dropoff: 'สถานที่ส่ง', both: 'รับและส่ง' };
+
+/* ตัวเลือกในฟอร์ม: เฉพาะสถานที่ที่เปิดใช้ แยกเป็นรายการสถานที่รับ / สถานที่ส่ง */
 function getPlaces_() {
-  const rows = readRows_('Moves').slice(-500).reverse(), seen = {}, out = [];
-  rows.forEach(r => [r.Pickup, r.Dropoff].forEach(v => {
-    const s = String(v || '').trim();
-    if (s && !seen[s]) { seen[s] = 1; out.push(s); }
-  }));
-  return out.slice(0, 100);
+  const list = listPlaces_().filter(x => x.active);
+  return {
+    pickups: list.filter(x => x.type !== 'dropoff').map(x => x.name),
+    dropoffs: list.filter(x => x.type !== 'pickup').map(x => x.name)
+  };
+}
+
+function listPlaces_() {
+  return readRows_('Places').filter(r => r.Id && String(r.Name).trim()).map(r => ({
+    id: String(r.Id), name: String(r.Name), type: PLACE_TYPES[r.Type] ? String(r.Type) : 'both',
+    active: r.Active === '' || isOn_(r.Active), createdAt: dt_(r.CreatedAt)
+  })).sort((a, b) => a.name.localeCompare(b.name, 'th'));
+}
+
+function savePlace_(p, who) {
+  const name = String(p.name || '').trim().slice(0, 200), type = PLACE_TYPES[p.type] ? String(p.type) : 'both';
+  if (!name) fail_('no_name', 'กรุณาใส่ชื่อสถานที่');
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const rows = readRows_('Places');
+    if (rows.some(r => String(r.Name).trim().toLowerCase() === name.toLowerCase() && String(r.Id) !== String(p.id || '')))
+      fail_('exists', 'มีสถานที่ชื่อ "' + name + '" อยู่แล้ว');
+    const fields = { Name: text_(name), Type: type, Active: p.active !== false };
+    if (p.id) {
+      const row = rows.find(r => String(r.Id) === String(p.id));
+      if (!row) fail_('not_found', 'ไม่พบสถานที่นี้ (อาจถูกลบไปแล้ว)');
+      setCells_('Places', row._row, fields);
+      return { id: p.id };
+    }
+    const id = 'p_' + randomHex_().slice(0, 12);
+    appendRow_('Places', Object.assign({ Id: id, CreatedAt: new Date(), CreatedBy: text_(who.email || '') }, fields));
+    return { id: id };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function deletePlace_(p) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const row = readRows_('Places').find(r => String(r.Id) === String(p.id || ''));
+    if (!row) fail_('not_found', 'ไม่พบสถานที่นี้ (อาจถูกลบไปแล้ว)');
+    sheet_('Places').deleteRow(row._row);   // บันทึกการขนส่งเดิมเก็บชื่อสถานที่ไว้แล้ว จึงไม่กระทบข้อมูลเก่า
+  } finally {
+    lock.releaseLock();
+  }
+  return {};
+}
+
+/* ---------- งานที่มอบหมาย: ผู้ดูแลกำหนดสถานที่รับ-ส่งให้พนักงาน ---------- */
+/* p.email = เฉพาะพนักงานคนนี้, p.status = open/done (ว่าง = ทั้งหมด) ล่าสุดก่อน พร้อมจำนวนเที่ยวที่ขนแล้ว */
+function listAssignments_(p) {
+  const email = String(p.email || '').toLowerCase(), status = String(p.status || '');
+  const trips = {};
+  readRows_('Moves').forEach(r => { if (r.AssignId) { const t = trips[r.AssignId] || (trips[r.AssignId] = { trips: 0, qty: 0 }); t.trips++; t.qty += Number(r.Qty) || 0; } });
+  const names = {};
+  readRows_('Users').forEach(r => names[String(r.Email).toLowerCase()] = String(r.Name || r.Email));
+  return readRows_('Assignments')
+    .filter(r => r.Id && (!email || String(r.Email).toLowerCase() === email) && (!status || r.Status === status))
+    .map(r => ({
+      id: String(r.Id), email: String(r.Email), name: names[String(r.Email).toLowerCase()] || String(r.Email),
+      pickup: String(r.Pickup), dropoff: String(r.Dropoff), note: String(r.Note || ''), status: String(r.Status || 'open'),
+      createdAt: dt_(r.CreatedAt), t: r.CreatedAt instanceof Date ? r.CreatedAt.getTime() : 0,
+      trips: (trips[r.Id] || {}).trips || 0, qty: (trips[r.Id] || {}).qty || 0
+    }))
+    .sort((a, b) => b.t - a.t);
+}
+
+function findAssignment_(id) {
+  const row = readRows_('Assignments').find(r => String(r.Id) === String(id || ''));
+  if (!row) fail_('not_found', 'ไม่พบงานที่มอบหมายนี้ (อาจถูกลบไปแล้ว)');
+  row.Email = String(row.Email).toLowerCase();
+  return row;
+}
+
+function saveAssignment_(p, who) {
+  const email = String(p.email || '').trim().toLowerCase();
+  const user = findUser_(email);
+  if (!user) fail_('not_found', 'ไม่พบพนักงาน ' + email);
+  const pickup = String(p.pickup || '').trim().slice(0, 200), dropoff = String(p.dropoff || '').trim().slice(0, 200);
+  if (!pickup || !dropoff) fail_('no_place', 'กรุณาใส่สถานที่รับและสถานที่ส่ง');
+  const fields = { Email: email, Pickup: text_(pickup), Dropoff: text_(dropoff), Note: text_(String(p.note || '').trim().slice(0, 300)),
+    Status: p.status === 'done' ? 'done' : 'open', UpdatedAt: new Date() };
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    if (p.id) {
+      setCells_('Assignments', findAssignment_(p.id)._row, fields);
+      return { id: p.id };
+    }
+    const id = 'a_' + randomHex_().slice(0, 16);
+    appendRow_('Assignments', Object.assign({ Id: id, CreatedAt: new Date(), CreatedBy: text_(who.email || who.deviceId) }, fields));
+    return { id: id };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function deleteAssignment_(p) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    sheet_('Assignments').deleteRow(findAssignment_(p.id)._row);
+  } finally {
+    lock.releaseLock();
+  }
+  return {};
 }
 
 /* ---------- จัดการบันทึกการขนส่ง (ผู้ดูแลระบบ) ---------- */
@@ -867,7 +1023,8 @@ function setup() {
   const ps = sheet_('Products');
   if (ps.getLastRow() < 2) ps.getRange(2, 1, SEED_PRODUCTS.length, 4).setValues(SEED_PRODUCTS.map(r => r.concat([true])));
   writeFieldDocs_(book);
-  [['Moves', 'Timestamp'], ['Users', 'LastLogin'], ['Users', 'CreatedAt'], ['Devices', 'LastSeen'], ['Devices', 'CreatedAt'], ['Refs', 'Timestamp']]
+  [['Moves', 'Timestamp'], ['Users', 'LastLogin'], ['Users', 'CreatedAt'], ['Devices', 'LastSeen'], ['Devices', 'CreatedAt'], ['Refs', 'Timestamp'],
+    ['Assignments', 'CreatedAt'], ['Assignments', 'UpdatedAt'], ['Places', 'CreatedAt']]
     .forEach(([n, h]) => {
       const sh = sheet_(n), c = header_(sh).indexOf(h) + 1;
       if (c > 0) sh.getRange(2, c, Math.max(1, sh.getMaxRows() - 1), 1).setNumberFormat('dd/MM/yyyy HH:mm:ss');
