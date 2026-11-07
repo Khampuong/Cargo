@@ -17,6 +17,7 @@
 | [model/cargo_model_weights.b64.txt](model/cargo_model_weights.b64.txt) | ไฟล์ของตัวจดจำภาพ (5.9 MB) อัปโหลดไว้ใน Google Drive |
 | [esp32/CargoStation/](esp32/CargoStation/) | เฟิร์มแวร์บอร์ด ESP32 |
 | [dev/preview.js](dev/preview.js) | รันหน้าแอปบนเครื่องเพื่อทดลอง |
+| [cloudflare/](cloudflare/) | Cloudflare Worker: โดเมนของเราสำหรับหน้าแอป และ `/api` สำหรับ ESP32 |
 | [dev/dump_schema.js](dev/dump_schema.js), [dev/build_db.py](dev/build_db.py) | สร้างไฟล์ฐานข้อมูลเปล่า (.xlsx) จากโครงสร้างใน Code.gs |
 
 ## เข้าสู่ระบบ
@@ -35,7 +36,7 @@
 |---|:-:|:-:|
 | **บันทึกอุปกรณ์**: ชื่อผู้ขนส่ง (ระบบจำไว้ให้), สถานที่รับ, สถานที่ส่ง (กรอกใหม่ทุกครั้ง) → ถ่ายภาพหรือเลือกอุปกรณ์ → จำนวน → บันทึก | ✓ | ✓ |
 | **ผลการขนส่ง**: สรุปตามวัน, อุปกรณ์, เส้นทาง, ผู้ขนส่ง | ✓ | ✓ |
-| **เชื่อมต่อ ESP32**: ขอ Token ให้บอร์ดของตัวเอง, ดูสถานะบอร์ด, ยกเลิก Token | ✓ (ของตัวเอง) | ✓ (ทุกบอร์ด) |
+| **เชื่อมต่อ ESP32**: Token ระบบอันเดียว (แสดง/คัดลอก/สร้างใหม่), config.h, รายการบอร์ด, กำหนดพนักงานให้บอร์ด, บล็อกบอร์ด | | ✓ |
 | **ผู้ดูแลระบบ > สถานที่รับ / สถานที่ส่ง**: เพิ่ม/แก้ไข/ลบ/ปิดสถานที่ และกำหนดว่าใช้เป็นสถานที่รับ สถานที่ส่ง หรือทั้งสองแบบ รายการนี้ขึ้นเป็นตัวเลือกในทุกช่องสถานที่ | | ✓ |
 | **ผู้ดูแลระบบ > มอบหมายสถานที่รับ-ส่งให้พนักงาน**: เลือกพนักงาน + สถานที่รับ + สถานที่ส่ง + หมายเหตุ, ดูจำนวนเที่ยวที่ขนแล้ว, ปิดงาน/แก้ไข/ลบ | | ✓ |
 | **ผู้ดูแลระบบ**: จัดการบันทึกการขนส่งของพนักงาน (ค้นหา/เพิ่ม/แก้ไข/ลบ), บัญชี, อุปกรณ์ | | ✓ |
@@ -51,17 +52,22 @@
 
 ## เชื่อมต่อบอร์ด ESP32
 
-1. เข้าระบบ แล้วไปที่เมนู **เชื่อมต่อ ESP32**
-2. กด **ขอ Token** (ระบุรหัสบอร์ดเองได้ หรือเว้นว่างให้ระบบตั้งให้ เช่น `ESP32-01`)
-3. กด **คัดลอก config.h** แล้ววางเป็นไฟล์ `esp32/CargoStation/config.h` จากนั้นใส่ชื่อและรหัส WiFi
-4. Upload เฟิร์มแวร์ขึ้นบอร์ด (ต้องใช้บอร์ด **esp32 (Espressif)** และไลบรารี **ArduinoJson 7.x**)
+บอร์ดทุกตัวใช้ **Token ระบบอันเดียว** และแยกบอร์ดด้วย `DEVICE_ID`
 
-สิ่งที่ควรรู้:
-- บันทึกจากบอร์ดจะใช้ชื่อของเจ้าของ Token เป็นผู้ขนส่ง
-- Token แสดงแค่ครั้งเดียว ถ้าทำหาย ให้กดยกเลิก แล้วขอใหม่ด้วยรหัสบอร์ดเดิม
-- ถ้าบัญชีของเจ้าของถูกปิด Token ของบอร์ดนั้นจะใช้ไม่ได้ทันที
-- ขอ Token ที่ใช้งานอยู่พร้อมกันได้ไม่เกิน 5 อันต่อบัญชี
-- คู่มือต่อขาและวิธีใช้บอร์ดอยู่ในคอมเมนต์ต้นไฟล์ [CargoStation.ino](esp32/CargoStation/CargoStation.ino)
+1. ผู้ดูแลระบบเข้าเมนู **เชื่อมต่อ ESP32** (พนักงานไม่เห็นเมนูนี้)
+2. ใส่ **รหัสบอร์ด** (เช่น `ESP32-01`) ให้ไม่ซ้ำกับบอร์ดอื่น แล้วกด **คัดลอก config.h**
+3. วางเป็นไฟล์ `esp32/CargoStation/config.h` แล้วใส่ชื่อและรหัส WiFi
+4. Upload เฟิร์มแวร์ขึ้นบอร์ด (ต้องใช้บอร์ด **esp32 (Espressif)** และไลบรารี **ArduinoJson 7.x**)
+5. เมื่อบอร์ดติดต่อเข้ามาครั้งแรก จะขึ้นในตาราง **บอร์ดที่เชื่อมต่อ** เอง
+
+ผู้ดูแลทำอะไรได้บ้าง:
+- **แสดง / คัดลอก Token ระบบ** ได้ตลอดเวลา (Token เก็บใน Script Properties ชื่อ `SYSTEM_TOKEN` ไม่ได้อยู่ในชีต)
+- **สร้าง Token ใหม่:** ต้องกดยืนยันซ้ำ Token เก่าจะใช้ไม่ได้ทันที บอร์ดทุกตัวต้องอัปเดต `DEVICE_TOKEN`
+- **กำหนดพนักงานที่ใช้บอร์ด:** บันทึกจากบอร์ดนั้นจะเป็นชื่อพนักงานคนนั้น และถ้าบอร์ดไม่ได้ส่งสถานที่มา จะใช้งานที่มอบหมายของเขา ถ้าไม่ได้กำหนด จะใช้รหัสบอร์ดเป็นชื่อผู้ขนส่ง
+- **บล็อก / ปลดบล็อก** บอร์ดแต่ละตัวได้ บอร์ดที่ถูกบล็อกส่งข้อมูลไม่ได้ แม้ใช้ Token ถูก
+- **ลบ** บอร์ดออกจากรายการ ถ้าบอร์ดนั้นยังติดต่อเข้ามาด้วย Token ปัจจุบัน จะถูกเพิ่มกลับเอง
+
+คู่มือต่อขาและวิธีใช้บอร์ดอยู่ในคอมเมนต์ต้นไฟล์ [CargoStation.ino](esp32/CargoStation/CargoStation.ino)
 
 API ที่บอร์ดเรียกคือ `POST <URL /exec>` โดยส่ง body เป็น JSON ซึ่งต้องมี `token` และ `action` เสมอ
 
@@ -88,7 +94,7 @@ API ที่บอร์ดเรียกคือ `POST <URL /exec>` โด�
 | **Assignments** (งานที่มอบหมาย) | Id, Email, Pickup, Dropoff, Note, Status (`open` = กำลังทำ / `done` = เสร็จแล้ว), CreatedAt, CreatedBy, UpdatedAt |
 | **Users** (บัญชีผู้ใช้งาน) | Email, Name, Role (`user` = พนักงาน / `admin` = ผู้ดูแลระบบ), Active, LastLogin, CreatedAt |
 | **Products** (อุปกรณ์ที่ขนส่ง) | Code, Name, Unit, Active |
-| **Devices** (บอร์ด ESP32 และ Token) | DeviceId, Name, Role, TokenHash, Active, LastSeen, Firmware, Info, CreatedAt, Owner |
+| **Devices** (บอร์ด ESP32 — เพิ่มเองเมื่อบอร์ดติดต่อครั้งแรก) | DeviceId, Name, Role, TokenHash (ไม่ใช้แล้ว), Active (FALSE = บล็อก), LastSeen, Firmware, Info, CreatedAt, Owner (พนักงานที่ใช้บอร์ด) |
 | **Refs** (ภาพที่ใช้จดจำอุปกรณ์) | Id, Code, Name, Vec, Thumb, AddedBy, Timestamp |
 
 สร้างไฟล์ฐานข้อมูลเปล่าใหม่ได้จากโครงสร้างใน Code.gs:
@@ -113,6 +119,47 @@ python dev/build_db.py schema.json "Database Cargo.xlsx"    # อัปโหล
 5. เปิด URL `/exec` แล้วเข้าระบบด้วย `phatthachada.k@gmail.com` จากนั้นเพิ่มอีเมลพนักงานในแท็บ **ผู้ดูแลระบบ**
 
 > แก้โค้ดแล้วต้องไปที่ **Deploy > Manage deployments > Edit > Version: New version** ทุกครั้ง
+
+## Cloudflare
+
+### ใช้งานจริง: Cloudflare Worker หน้าบ้านของ Apps Script
+
+ไฟล์อยู่ใน [cloudflare/](cloudflare/) ใช้ทำ 2 อย่าง:
+
+| URL บนโดเมนของคุณ | ทำอะไร |
+|---|---|
+| `https://cargo.example.com/` | แสดงหน้าแอปเต็มจอ แทน URL ยาวของ `script.google.com` |
+| `https://cargo.example.com/api` | API สำหรับ ESP32: Worker ส่งต่อไปที่ Apps Script และตาม redirect ของ Google ให้ บอร์ดจึงได้ JSON กลับทันที |
+| `https://cargo.example.com/health` | ตรวจว่า Worker ทำงานและตั้งค่าแล้ว |
+
+1. Deploy Apps Script ตามหัวข้อ **ติดตั้ง** ให้เสร็จก่อน แล้วคัดลอก URL `/exec`
+2. แก้ [cloudflare/wrangler.toml](cloudflare/wrangler.toml)
+   - ใส่ URL `/exec` ใน `APPS_SCRIPT_URL`
+   - ถ้ามีโดเมนใน Cloudflare ให้เปิดบรรทัด `routes` แล้วใส่ชื่อโดเมน
+3. Deploy:
+   ```sh
+   cd cloudflare
+   npx wrangler login      # เปิดเบราว์เซอร์ให้ล็อกอิน Cloudflare
+   npx wrangler deploy
+   ```
+   ถ้าไม่ใส่ `routes` จะได้ URL แบบ `https://cargo-bot.<ชื่อบัญชี>.workers.dev`
+4. ให้ config.h ของ ESP32 ใช้ URL ของ Cloudflare:
+   - ใน Apps Script ไปที่ **Project Settings > Script properties** แล้วเพิ่ม `PUBLIC_BASE_URL` = `https://cargo.example.com` (หรือใส่ในค่าคงที่ `PUBLIC_BASE_URL` ใน Code.gs)
+   - จากนั้นเมนู **เชื่อมต่อ ESP32** จะสร้าง config.h ที่มี `API_URL` เป็น `https://cargo.example.com/api`
+
+> Code.gs ตั้ง `XFrameOptionsMode.ALLOWALL` ไว้แล้ว เพื่อให้หน้า Worker แสดงแอปได้ ถ้าแก้ Code.gs ต้อง Deploy เวอร์ชันใหม่ด้วย
+
+### ทดลอง: Cloudflare Tunnel ไปที่ระบบบนเครื่อง
+
+ใช้ให้มือถือหรือบอร์ด ESP32 จริงเข้าถึงระบบทดลองบนเครื่องนี้ได้ ไม่ต้องล็อกอิน Cloudflare:
+
+```sh
+cloudflared tunnel --url http://localhost:8080          # ได้ URL https://xxxx.trycloudflare.com
+PUBLIC_URL=https://xxxx.trycloudflare.com node dev/preview.js
+```
+
+- `PUBLIC_URL` ทำให้ config.h ในเมนู ESP32 ชี้ไปที่ `https://xxxx.trycloudflare.com/api`
+- URL ของ Quick Tunnel **เปลี่ยนทุกครั้งที่เปิดใหม่** และใช้ได้เฉพาะตอนที่เครื่องนี้เปิด tunnel อยู่ จึงเหมาะกับการทดลองเท่านั้น
 
 ## ทดลองบนเครื่อง
 

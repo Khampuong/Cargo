@@ -3,7 +3,7 @@
  * ฐานข้อมูลคือ Google Sheet (DEFAULT_SPREADSHEET_ID)
  *
  * หน้าแอป:   เปิด <WEB_APP_URL> ในเบราว์เซอร์ เข้าสู่ระบบด้วยอีเมลที่ลงทะเบียนในชีต Users
- *            ผู้ใช้ขอ Token สำหรับบอร์ด ESP32 ได้จากเมนู "เชื่อมต่อ ESP32"
+ *            บอร์ด ESP32 ใช้ Token ระบบอันเดียว (ผู้ดูแลดู/สร้างใหม่ได้ในเมนู "เชื่อมต่อ ESP32")
  *            หน้าเว็บเรียกเซิร์ฟเวอร์ผ่าน google.script.run.rpc(action, params, session)
  *
  * API (ESP32 / ระบบอื่น):
@@ -25,7 +25,9 @@ const DEFAULT_SPREADSHEET_ID = '1_8C6v41tTDqwMaEhVT1ZM1j2VzEI-aZS3PfTtegj4Ko';
 const ADMIN_EMAILS = ['phatthachada.k@gmail.com'];
 // ไม่บังคับ: ใส่ Client ID ของ Google เพื่อแสดงปุ่ม "Sign in with Google" เพิ่มจากการเข้าด้วยอีเมล
 const DEFAULT_GOOGLE_CLIENT_ID = '';
-const MAX_TOKENS_PER_USER = 5;       // จำนวน Token ESP32 ที่เปิดใช้อยู่ได้ต่อบัญชี
+// โดเมนของ Cloudflare Worker เช่น 'https://cargo.example.com' ("" = ใช้ URL /exec ของ Apps Script ตรง ๆ)
+// ตั้งเป็น Script Property PUBLIC_BASE_URL แทนได้โดยไม่ต้องแก้โค้ด
+const PUBLIC_BASE_URL = '';
 
 const SHEETS = {
   Products: ['Code', 'Name', 'Unit', 'Active'],
@@ -89,17 +91,17 @@ const FIELD_DOCS = {
     Unit: ['หน่วยนับ', 'ตัว'],
     Active: ['ใช้งานอยู่ (TRUE/FALSE)', 'TRUE']
   }],
-  Devices: ['บอร์ด ESP32 และ Token', {
+  Devices: ['บอร์ด ESP32 (ทุกบอร์ดใช้ Token ระบบอันเดียว ระบบเพิ่มบอร์ดให้เองเมื่อติดต่อครั้งแรก)', {
     DeviceId: ['รหัสบอร์ด (DEVICE_ID ใน config.h)', 'ESP32-01'],
-    Name: ['ชื่อผู้ขนส่งของบันทึกจากบอร์ดนี้', 'สมชาย ใจดี'],
-    Role: ['ชนิด Token', 'device'],
-    TokenHash: ['ค่า SHA-256 ของ Token (ไม่เก็บ Token จริง)', 'a3f1...'],
-    Active: ['Token ใช้งานได้ (TRUE/FALSE)', 'TRUE'],
+    Name: ['ชื่อบอร์ด (ใช้เป็นชื่อผู้ขนส่ง ถ้าไม่ได้กำหนดพนักงาน)', 'ESP32-01'],
+    Role: ['ชนิด', 'device'],
+    TokenHash: ['ไม่ใช้แล้ว (Token ระบบเก็บใน Script Properties: SYSTEM_TOKEN)', ''],
+    Active: ['อนุญาตให้บอร์ดส่งข้อมูล (FALSE = ผู้ดูแลบล็อกไว้)', 'TRUE'],
     LastSeen: ['บอร์ดติดต่อล่าสุด', '07/11/2026 09:31:00'],
     Firmware: ['เวอร์ชันเฟิร์มแวร์', '1.0.0'],
     Info: ['สถานะบอร์ดล่าสุด (IP, สัญญาณ WiFi, คิว)', '{"rssi":-58}'],
-    CreatedAt: ['วันที่ขอ Token', '07/11/2026 09:00:00'],
-    Owner: ['อีเมลเจ้าของบอร์ด', 'somchai@cargo.co']
+    CreatedAt: ['วันที่บอร์ดติดต่อครั้งแรก', '07/11/2026 09:00:00'],
+    Owner: ['อีเมลพนักงานที่ใช้บอร์ดนี้ (ผู้ดูแลกำหนด) บันทึกจากบอร์ดจะเป็นชื่อพนักงานคนนี้', 'somchai@cargo.co']
   }],
   Refs: ['ภาพที่ใช้จดจำอุปกรณ์', {
     Id: ['รหัสภาพ', '1a2b3c4d'],
@@ -122,7 +124,7 @@ const ROLES = {
   device: ['ping', 'heartbeat', 'products', 'lookup', 'saveMove'],
   web: ['ping', 'products', 'lookup', 'saveMove', 'dashboard'],
   user: ['ping', 'me', 'logout', 'products', 'lookup', 'places', 'saveMove', 'dashboard',
-    'refs', 'addRef', 'modelInfo', 'modelChunk', 'myDevices', 'requestToken', 'revokeToken', 'myAssignments'],
+    'refs', 'addRef', 'modelInfo', 'modelChunk', 'myAssignments'],
   admin: ['*']
 };
 const ROLE_TH = { user: 'พนักงาน', admin: 'ผู้ดูแลระบบ' };
@@ -151,9 +153,6 @@ const ACTIONS = {
   modelChunk: p => ({ data: modelText_().substr(Math.max(0, Math.floor(Number(p.i) || 0)) * MODEL_CHUNK, MODEL_CHUNK) }),
   // ESP32: ผู้ใช้ขอ Token ของตัวเอง (ผู้ดูแลเห็นและปิดได้ทุกเครื่อง)
   myAssignments: (p, who) => ({ assignments: listAssignments_({ email: who.email, status: 'open' }) }),
-  myDevices: (p, who) => ({ devices: listDevices_().filter(d => who.role === 'admin' || d.owner === who.email), apiUrl: apiUrl_() }),
-  requestToken: requestToken_,
-  revokeToken: revokeToken_,
   // ผู้ดูแลระบบ
   assignments: p => ({ assignments: listAssignments_(p) }),
   saveAssignment: saveAssignment_,
@@ -168,9 +167,11 @@ const ACTIONS = {
   allProducts: () => ({ products: listAllProducts_() }),
   saveProduct: saveProduct_,
   deleteRef: deleteRef_,
-  devices: () => ({ devices: listDevices_() }),
-  createDevice: p => ({ token: createDevice_(p.deviceId, p.name, p.role) }),
-  setDeviceActive: setDeviceActive_
+  // ESP32: Token เดียวทั้งระบบ
+  systemToken: () => ({ token: systemToken_(false), apiUrl: apiUrl_(), devices: listDevices_() }),
+  regenToken: () => ({ token: systemToken_(true), apiUrl: apiUrl_() }),
+  setDevice: setDevice_,
+  deleteDevice: deleteDevice_
 };
 
 /* ---------- entry points ---------- */
@@ -178,8 +179,9 @@ function doGet(e) {
   const p = Object.assign({}, e && e.parameter);
   if (!p.action) {
     return HtmlService.createTemplateFromFile('Index').evaluate()
-      .setTitle('Cargo Bot ขนสินค้า')
-      .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+      .setTitle('Cargo Bot ขนส่งอุปกรณ์')
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);   // ให้หน้า Cloudflare Worker (โดเมนของเรา) แสดงแอปได้
   }
   return respond_(handle_(p));
 }
@@ -218,7 +220,7 @@ function handle_(p) {
     ensureSchema_();
     let who = null;
     if (PUBLIC.indexOf(action) < 0) {
-      who = p.session ? session_(p.session) : auth_(p.token);
+      who = p.session ? session_(p.session) : auth_(p.token, p);
       const allowed = ROLES[who.role] || [];
       if (allowed.indexOf('*') < 0 && allowed.indexOf(action) < 0) fail_('forbidden', 'สิทธิ์ ' + who.role + ' ใช้คำสั่ง ' + action + ' ไม่ได้');
       if (who.kind === 'token') touch_(who, p, action === 'heartbeat');
@@ -241,96 +243,100 @@ function fail_(code, message) {
   throw e;
 }
 
-/* ---------- token (ESP32 / ระบบภายนอก) ---------- */
-/* เก็บเฉพาะ SHA-256 ของ token ในชีต Devices ตัว token จริงแสดงครั้งเดียวตอนสร้าง */
-function auth_(token) {
-  token = String(token || '').trim();
-  if (!token) fail_('unauthorized', 'ไม่ได้ส่ง token');
-  const hash = sha256_(token), cache = CacheService.getScriptCache(), key = 'tok:' + hash;
-  const hit = cache.get(key);
-  if (hit) return JSON.parse(hit);
-  const row = readRows_('Devices').find(r => r.TokenHash === hash && isOn_(r.Active));
-  if (!row) fail_('unauthorized', 'Token ไม่ถูกต้องหรือถูกปิดใช้งาน');
-  if (row.Owner) {   // Token ของผู้ใช้: ใช้ไม่ได้ถ้าบัญชีเจ้าของถูกปิดหรือลบ
-    const owner = findUser_(row.Owner);
-    if (!owner || !isOn_(owner.Active)) fail_('unauthorized', 'บัญชีเจ้าของ Token นี้ถูกปิดใช้งาน');
+/* ---------- Token ระบบ (ESP32 / ระบบภายนอก): Token เดียวทั้งระบบ แยกบอร์ดด้วย deviceId ---------- */
+/* เก็บใน Script Properties (SYSTEM_TOKEN) ผู้ดูแลดู/คัดลอก/สร้างใหม่ได้ในเมนู "เชื่อมต่อ ESP32" */
+function systemToken_(regen) {
+  const props = PropertiesService.getScriptProperties();
+  let t = props.getProperty('SYSTEM_TOKEN');
+  if (!t || regen) {
+    t = 'cb_' + randomHex_();
+    props.setProperty('SYSTEM_TOKEN', t);
   }
-  const who = { kind: 'token', deviceId: String(row.DeviceId), name: String(row.Name || row.DeviceId), role: String(row.Role || 'device'), owner: String(row.Owner || '') };
-  cache.put(key, JSON.stringify(who), 300);
-  return who;
+  return t;
 }
 
-/* บันทึกเวลาที่อุปกรณ์ติดต่อล่าสุด (เขียนชีตไม่เกินนาทีละครั้ง ยกเว้น heartbeat) */
+function deviceIdOf_(p) {
+  const id = String(p.deviceId || '').trim();
+  return /^[A-Za-z0-9_.-]{1,32}$/.test(id) ? id : 'ESP32';
+}
+
+function auth_(token, p) {
+  token = String(token || '').trim();
+  if (!token) fail_('unauthorized', 'ไม่ได้ส่ง token');
+  const sys = PropertiesService.getScriptProperties().getProperty('SYSTEM_TOKEN');
+  if (!sys || token !== sys) fail_('unauthorized', 'Token ไม่ถูกต้อง (ผู้ดูแลอาจสร้าง Token ใหม่แล้ว)');
+  const id = deviceIdOf_(p);
+  const row = readRows_('Devices').find(r => String(r.DeviceId).toLowerCase() === id.toLowerCase());
+  if (row && !isOn_(row.Active)) fail_('unauthorized', 'บอร์ด ' + id + ' ถูกผู้ดูแลระบบบล็อกไว้');
+  // บอร์ดที่ผู้ดูแลกำหนดพนักงานไว้: บันทึกในชื่อพนักงานคนนั้น และใช้งานที่มอบหมายของเขา
+  const owner = row && row.Owner ? findUser_(row.Owner) : null;
+  return {
+    kind: 'token', deviceId: id, role: 'device',
+    name: owner ? String(owner.Name || owner.Email) : (row && String(row.Name).trim() ? String(row.Name) : id),
+    owner: owner ? String(owner.Email).toLowerCase() : ''
+  };
+}
+
+/* บันทึกบอร์ดที่ติดต่อเข้ามา (บอร์ดใหม่ถูกเพิ่มในชีต Devices อัตโนมัติ) เขียนชีตไม่เกินนาทีละครั้ง ยกเว้น heartbeat */
 function touch_(who, p, force) {
-  const cache = CacheService.getScriptCache(), key = 'seen:' + who.deviceId;
+  const cache = CacheService.getScriptCache(), key = 'seen:' + who.deviceId.toLowerCase();
   if (!force && cache.get(key)) return;
-  const row = readRows_('Devices').find(r => String(r.DeviceId) === who.deviceId);
-  if (!row) return;
   const upd = { LastSeen: new Date() };
   if (p.fw) upd.Firmware = text_(p.fw);
   if (force) upd.Info = text_(JSON.stringify({ ip: p.ip, rssi: p.rssi, uptime: p.uptime, queue: p.queue, heap: p.heap }));
-  setCells_('Devices', row._row, upd);
-  cache.put(key, '1', 60);
-}
-
-function createDevice_(deviceId, name, role, owner) {
-  const id = String(deviceId || '').trim();
-  role = String(role || 'device').toLowerCase();
-  if (!/^[A-Za-z0-9_.-]{2,32}$/.test(id)) fail_('bad_id', 'รหัสบอร์ดใช้ได้เฉพาะ A-Z a-z 0-9 _ . - ยาว 2–32 ตัว');
-  if (['device', 'web', 'admin'].indexOf(role) < 0) fail_('bad_role', 'สิทธิ์ต้องเป็น device, web หรือ admin');
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    const rows = readRows_('Devices'), same = rows.find(r => String(r.DeviceId).toLowerCase() === id.toLowerCase());
-    // บอร์ดเดิมของตัวเองที่ยกเลิก Token ไปแล้ว ขอ Token ใหม่ด้วยรหัสเดิมได้ (บอร์ดเปลี่ยนแค่ DEVICE_TOKEN)
-    const reuse = same && owner && String(same.Owner) === owner && !isOn_(same.Active);
-    if (same && !reuse) fail_('exists', 'มีบอร์ดรหัส ' + id + ' อยู่แล้ว กรุณาใช้รหัสอื่น');
-    if (owner && rows.filter(r => String(r.Owner) === owner && isOn_(r.Active)).length >= MAX_TOKENS_PER_USER)
-      fail_('too_many', 'มี Token ที่ใช้งานอยู่ครบ ' + MAX_TOKENS_PER_USER + ' อันแล้ว กรุณายกเลิกอันที่ไม่ใช้ก่อน');
-    const token = 'cb_' + randomHex_();
-    const fields = { Name: text_(String(name || '').trim() || id), Role: role, TokenHash: sha256_(token), Active: true, CreatedAt: new Date(), LastSeen: '' };
-    if (reuse) setCells_('Devices', same._row, fields);
-    else appendRow_('Devices', Object.assign({ DeviceId: id, Owner: owner || '' }, fields));
-    return token;
+    const row = readRows_('Devices').find(r => String(r.DeviceId).toLowerCase() === who.deviceId.toLowerCase());
+    if (row) setCells_('Devices', row._row, upd);
+    else appendRow_('Devices', Object.assign({ DeviceId: text_(who.deviceId), Name: text_(who.deviceId), Role: 'device', Active: true, CreatedAt: new Date() }, upd));
   } finally {
     lock.releaseLock();
   }
+  cache.put(key, '1', 60);
 }
 
-/* ผู้ใช้ขอ Token สำหรับบอร์ด ESP32 ของตัวเอง: บันทึกจากบอร์ดจะใช้ชื่อผู้ใช้เป็นผู้ขนส่ง */
-function requestToken_(p, who) {
-  let id = String(p.deviceId || '').trim();
-  if (!id) {   // ไม่ระบุรหัสบอร์ด: ตั้งให้อัตโนมัติ ESP32-01, ESP32-02, ...
-    const used = readRows_('Devices').map(r => String(r.DeviceId).toUpperCase());
-    for (let n = 1; !id || used.indexOf(id.toUpperCase()) >= 0; n++) id = 'ESP32-' + String(n).padStart(2, '0');
+/* ผู้ดูแล: กำหนดพนักงานที่ใช้บอร์ด / บล็อก-ปลดบล็อกบอร์ด */
+function setDevice_(p) {
+  const row = readRows_('Devices').find(r => String(r.DeviceId) === String(p.deviceId));
+  if (!row) fail_('not_found', 'ไม่พบบอร์ด ' + p.deviceId);
+  const upd = {};
+  if (p.owner !== undefined) {
+    const email = String(p.owner || '').trim().toLowerCase();
+    if (email && !findUser_(email)) fail_('not_found', 'ไม่พบพนักงาน ' + email);
+    upd.Owner = email;
   }
-  const token = createDevice_(id, who.name, 'device', who.email);
-  return { deviceId: id, token: token, apiUrl: apiUrl_() };
-}
-
-function revokeToken_(p, who) {
-  const row = readRows_('Devices').find(r => String(r.DeviceId) === String(p.deviceId));
-  if (!row || (who.role !== 'admin' && String(row.Owner) !== who.email)) fail_('not_found', 'ไม่พบบอร์ด ' + p.deviceId);
-  return setDeviceActive_({ deviceId: row.DeviceId, active: false });
-}
-
-/* URL ของ Web app (/exec) ที่บอร์ดต้องเรียก */
-function apiUrl_() {
-  try { return ScriptApp.getService().getUrl() || ''; } catch (e) { return ''; }
-}
-
-function setDeviceActive_(p) {
-  const row = readRows_('Devices').find(r => String(r.DeviceId) === String(p.deviceId));
-  if (!row) fail_('not_found', 'ไม่พบอุปกรณ์ ' + p.deviceId);
-  setCells_('Devices', row._row, { Active: !!p.active });
-  CacheService.getScriptCache().remove('tok:' + row.TokenHash);
+  if (p.active !== undefined) upd.Active = !!p.active;
+  setCells_('Devices', row._row, upd);
   return {};
 }
 
+function deleteDevice_(p) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    const row = readRows_('Devices').find(r => String(r.DeviceId) === String(p.deviceId));
+    if (!row) fail_('not_found', 'ไม่พบบอร์ด ' + p.deviceId);
+    sheet_('Devices').deleteRow(row._row);   // ถ้าบอร์ดยังติดต่อเข้ามาด้วย Token ปัจจุบัน จะถูกเพิ่มกลับเอง
+  } finally {
+    lock.releaseLock();
+  }
+  return {};
+}
+
+/* URL ที่บอร์ดต้องเรียก: ผ่าน Cloudflare Worker ถ้าตั้ง PUBLIC_BASE_URL ไว้ (→ /api) ไม่อย่างนั้นใช้ /exec ของ Apps Script */
+function apiUrl_() {
+  const base = (PropertiesService.getScriptProperties().getProperty('PUBLIC_BASE_URL') || PUBLIC_BASE_URL).replace(/\/+$/, '');
+  if (base) return base + '/api';
+  try { return ScriptApp.getService().getUrl() || ''; } catch (e) { return ''; }
+}
+
 function listDevices_() {
+  const names = {};
+  readRows_('Users').forEach(r => names[String(r.Email).toLowerCase()] = String(r.Name || r.Email));
   return readRows_('Devices').filter(r => String(r.DeviceId).trim()).map(r => ({
-    deviceId: String(r.DeviceId), name: String(r.Name), role: String(r.Role), active: isOn_(r.Active),
-    lastSeen: dt_(r.LastSeen), firmware: String(r.Firmware), createdAt: dt_(r.CreatedAt), owner: String(r.Owner || '')
+    deviceId: String(r.DeviceId), active: isOn_(r.Active), lastSeen: dt_(r.LastSeen), firmware: String(r.Firmware || ''),
+    createdAt: dt_(r.CreatedAt), owner: String(r.Owner || '').toLowerCase(), ownerName: names[String(r.Owner || '').toLowerCase()] || ''
   }));
 }
 

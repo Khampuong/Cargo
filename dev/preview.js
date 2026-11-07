@@ -61,7 +61,8 @@ const ctx = {
     openById: id => { if (!books[id]) throw new Error('not found'); return books[id]; },
     create: name => mkBook(name)
   },
-  ScriptApp: { getService: () => ({ getUrl: () => 'http://localhost:' + PORT + '/exec' }) },
+  // PUBLIC_URL = URL สาธารณะ (เช่น Cloudflare Tunnel) ให้ config.h ของ ESP32 ชี้ไปที่ /api ของ URL นั้น
+  ScriptApp: { getService: () => ({ getUrl: () => process.env.PUBLIC_URL ? process.env.PUBLIC_URL.replace(/\/+$/, '') + '/api' : 'http://localhost:' + PORT + '/exec' }) },
   CacheService: { getScriptCache: () => ({ get: k => cache[k] || null, put: (k, v) => { cache[k] = v; }, remove: k => { delete cache[k]; } }) },
   LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
   PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] || null, setProperty: (k, v) => { props[k] = v; }, deleteProperty: k => { delete props[k]; } }) },
@@ -141,7 +142,7 @@ http.createServer((req, res) => {
     });
     return;
   }
-  if (req.url.startsWith('/exec')) {   // API แบบเดียวกับที่ ESP32 เรียก
+  if (req.url.startsWith('/exec') || req.url.startsWith('/api')) {   // API แบบเดียวกับที่ ESP32 เรียก (/api = แบบผ่าน Cloudflare Worker)
     const u = new URL(req.url, 'http://x');
     let body = '';
     req.on('data', c => body += c);
