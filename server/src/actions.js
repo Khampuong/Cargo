@@ -40,7 +40,7 @@ const ACTIONS = {
   carts: async () => ({ carts: await listCarts() }),
   saveCart, deleteCart,
   cartLoans: async p => ({ loans: await listCartLoans(p) }),
-  forceReturn,
+  forceReturn, deleteCartLoans,
   authConfig: () => ({ emailLogin: emailOnlyAllowed() }),
   me: (p, who) => ({ user: publicUser(who) }),
   logout: async p => { await endSession(p.session); return {}; },
@@ -410,6 +410,9 @@ function moveResult(m, product) {
 }
 
 async function saveMove(p, who) {
+  // พนักงาน (หน้าเว็บ) ต้องยืมรถเข็นอยู่ จึงบันทึกการขนส่งได้ (บอร์ด ESP32 และผู้ดูแลไม่ต้อง)
+  if (who.kind === 'user' && who.role !== 'admin' && !await openLoanOf(who.email))
+    fail('need_cart', 'กรุณายืมรถเข็นก่อน จึงจะบันทึกการขนส่งได้');
   const product = await findProduct(p.code);
   const qty = Math.floor(Number(p.qty));
   if (!qty || qty < 1 || qty > 9999) fail('bad_qty', 'จำนวนชิ้นต้องอยู่ระหว่าง 1 – 9999');
@@ -806,6 +809,14 @@ async function deleteCart(p) {
 async function listCartLoans(p) {
   const open = p.open ? ' WHERE returned_at IS NULL' : '';
   return (await q('SELECT * FROM cart_loans' + open + ' ORDER BY borrowed_at DESC LIMIT 200')).map(loanOut);
+}
+
+/* ผู้ดูแล: ลบประวัติการยืม-คืนที่เลือก (ids) / รายการที่ยังไม่คืนถูกลบ = รถคันนั้นว่างทันที */
+async function deleteCartLoans(p) {
+  const ids = (Array.isArray(p.ids) ? p.ids : []).map(str).filter(id => /^l_[0-9a-f]{1,32}$/.test(id)).slice(0, 1000);
+  if (!ids.length) fail('no_selection', 'กรุณาติ๊กเลือกรายการที่จะลบ');
+  const r = await q('DELETE FROM cart_loans WHERE id IN (?)', [ids]);
+  return { deleted: r.affectedRows };
 }
 
 async function forceReturn(p, who) {

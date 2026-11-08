@@ -111,6 +111,7 @@
   .filters > div { min-width:140px; } .filters .grow { flex:1; min-width:180px; }
   input[type=date], input[type=datetime-local] { width:100%; padding:9px 10px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--fg); font:inherit; }
   .acts { display:flex; gap:6px; }
+  th.ck, td.ck { width:36px; text-align:center; } th.ck input, td.ck input { width:18px; height:18px; cursor:pointer; vertical-align:middle; }
   pre.cfg { margin:0; white-space:pre-wrap; font-size:.8rem; line-height:1.6; }
   ol.steps { margin:0; padding-left:20px; display:flex; flex-direction:column; gap:6px; font-size:.9rem; }
   .tokrow { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
@@ -504,9 +505,11 @@
       <div class="scroll"><table>
         <thead><tr><th>รหัส</th><th>ชื่อ</th><th>สถานะ</th><th>ผู้ยืม</th><th>ยืมเมื่อ</th><th></th></tr></thead>
         <tbody id="tCarts"></tbody></table></div>
-      <h2 style="margin:14px 0 8px">ประวัติการยืม-คืน</h2>
+      <div class="bar" style="margin:14px 0 8px"><h2 style="margin:0">ประวัติการยืม-คืน</h2>
+        <button class="b sm" type="button" id="lDel" disabled>ลบที่เลือก</button></div>
+      <div class="status" id="lStatus"></div>
       <div class="scroll"><table>
-        <thead><tr><th>รถเข็น</th><th>ผู้ยืม</th><th>เบอร์โทร</th><th>ยืม</th><th>คืน</th><th>นาที</th><th>ยืนยันด้วย</th><th>คืนโดย</th></tr></thead>
+        <thead><tr><th class="ck"><input type="checkbox" id="lAll" aria-label="เลือกทั้งหมด" title="เลือกทั้งหมด"></th><th>รถเข็น</th><th>ผู้ยืม</th><th>เบอร์โทร</th><th>ยืม</th><th>คืน</th><th>นาที</th><th>ยืนยันด้วย</th><th>คืนโดย</th></tr></thead>
         <tbody id="tLoans"></tbody></table></div>
     </div>
     <div class="card" data-sec="assign-removed" hidden>   <!-- ตัดฟังก์ชันมอบหมายงานออกแล้ว (เก็บไว้ให้โค้ดเดิมอ้างถึงได้) -->
@@ -734,7 +737,7 @@ async function loadLoginConfig() {
 }
 /* ---------- ปุ่มยืม / คืนรถเข็น ----------
    ยังไม่ได้ยืม → "ยืมรถเข็น" (เลือกคันที่ว่าง) / ยืมอยู่ → ปุ่มเปลี่ยนเป็น "คืนรถเข็น" และพาไปหน้าคืนเลย */
-let myLoan = null, cpCart = '', cpCarts = [];
+let myLoan = null, cpCart = '', cpCarts = [], backToRecord = false;
 async function refreshCartBtn() {
   try {
     const r = await api('myCart');
@@ -782,6 +785,12 @@ async function openCartPage(push) {
 function closeCartPage(fromPop) {
   document.body.classList.remove('cartmode'); $('cartPanel').hidden = true;
   if (!fromPop && location.hash === '#cart') history.back();
+  $('cpClose').textContent = 'กลับหน้าระบบ';
+  if (backToRecord) {   // มาจากปุ่มบันทึก: กลับไปที่ปุ่มบันทึกการขนส่ง (ข้อมูลที่กรอกไว้ยังอยู่)
+    backToRecord = false; showView('scan');
+    setTimeout(() => { $('save').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (myLoan) message('ok', 'ยืมรถเข็นแล้ว: ' + myLoan.cartName, 'กด "บันทึกการขนส่ง" อีกครั้งเพื่อบันทึก'); }, 50);
+  }
 }
 window.addEventListener('popstate', () => { if (location.hash === '#cart') { if (me && !isAdmin()) openCartPage(false); } else closeCartPage(true); });
 $('cartBtn').onclick = () => document.body.classList.contains('cartmode') ? closeCartPage() : openCartPage();
@@ -961,6 +970,16 @@ $('save').onclick = async () => {
   const missing = [['mover', mover], ['pickup', pickup], ['dropoff', dropoff]].filter(x => !x[1]).map(x => x[0]);
   if (missing.length) { missing.forEach(id => $(id).classList.add('need')); $(missing[0]).focus();
     message('err', 'กรุณากรอกข้อมูลการขนส่งให้ครบ', 'ชื่อผู้ขนส่ง สถานที่รับ และสถานที่ส่ง'); beep(220, 300); return; }
+  // พนักงานต้องยืมรถเข็นก่อน จึงบันทึกการขนส่งได้ → ยังไม่ยืม = พาไปหน้ายืมรถเข็น (ข้อมูลที่กรอกไว้ยังอยู่)
+  if (!isAdmin()) {
+    await refreshCartBtn();
+    if (!myLoan) {
+      await openCartPage();
+      setStatus('cpStatus', 'ต้องยืมรถเข็นก่อน จึงจะบันทึกการขนส่งได้ เลือกรถแล้วกดยืนยันการใช้ จากนั้นกด "กลับไปบันทึกขนส่ง"', 'err');
+      backToRecord = true; $('cpClose').textContent = 'กลับไปบันทึกขนส่ง';
+      return;
+    }
+  }
   const teach = isAdmin() && method === 'ภาพถ่าย' && photoImg && $('teach').checked, img = photoImg, prod = current;
   $('save').disabled = true; $('save').textContent = 'กำลังบันทึก...';
   try {
@@ -1237,12 +1256,45 @@ async function loadCartsAdmin() {
       cell(tr, '').appendChild(acts);
     }), 6, 'ยังไม่มีรถเข็น');
     fill('tLoans', l.loans.map(x => tr => {
+      const td = document.createElement('td'); td.className = 'ck';
+      const ck = document.createElement('input'); ck.type = 'checkbox'; ck.className = 'lck'; ck.value = x.id; ck.checked = loanChecked.has(x.id);
+      ck.setAttribute('aria-label', 'เลือก ' + x.cartName + ' ' + x.name + ' ' + x.borrowedAt); ck.onchange = loanSel;
+      td.appendChild(ck); tr.appendChild(td);
       cell(tr, x.cartName + ' (' + x.cartId + ')'); cell(tr, x.name); cell(tr, x.phone || '-'); cell(tr, x.borrowedAt);
       cell(tr, x.returnedAt || 'ยังไม่คืน'); cell(tr, String(x.minutes)); cell(tr, { pin: 'PIN', confirm: 'ติ๊กยืนยันชื่อ', login: 'เข้าสู่ระบบแล้ว' }[x.verifiedBy] || x.verifiedBy);
       cell(tr, !x.returnedAt ? '-' : x.returnedBy === 'self' ? 'ผู้ยืม' : x.returnedBy.replace('admin:', 'ผู้ดูแล '));
-    }), 8, 'ยังไม่มีการยืม');
+    }), 9, 'ยังไม่มีการยืม');
+    loanSel();
   } catch (err) { setStatus('cStatus', err.message, 'err'); }
 }
+/* ประวัติการยืม-คืน: ติ๊กเลือก / เลือกทั้งหมด แล้วลบ (กดซ้ำเพื่อยืนยัน) */
+const loanChecked = new Set();   // รายการที่ติ๊กไว้ (คงอยู่แม้ตารางโหลดใหม่)
+function loanSel() {
+  const all = [...document.querySelectorAll('#tLoans .lck')];
+  all.forEach(c => c.checked ? loanChecked.add(c.value) : loanChecked.delete(c.value));
+  [...loanChecked].forEach(id => { if (!all.some(c => c.value === id)) loanChecked.delete(id); });   // รายการที่ไม่มีแล้ว
+  const on = all.filter(c => c.checked);
+  $('lAll').checked = all.length > 0 && on.length === all.length;
+  $('lAll').indeterminate = on.length > 0 && on.length < all.length;
+  $('lDel').disabled = !on.length; $('lDel').classList.remove('danger');
+  $('lDel').textContent = on.length ? 'ลบที่เลือก (' + on.length + ')' : 'ลบที่เลือก';
+  if ($('lDel').dataset.armed === '1') { $('lDel').classList.add('danger'); $('lDel').textContent = 'ยืนยันลบ ' + on.length + ' รายการ'; }
+}
+$('lAll').onchange = () => { document.querySelectorAll('#tLoans .lck').forEach(c => c.checked = $('lAll').checked); loanSel(); };
+$('lDel').onclick = async () => {
+  const ids = [...document.querySelectorAll('#tLoans .lck:checked')].map(c => c.value);
+  if (!ids.length) return;
+  const b = $('lDel');
+  if (b.dataset.armed !== '1') {
+    b.dataset.armed = '1'; b.classList.add('danger'); b.textContent = 'ยืนยันลบ ' + ids.length + ' รายการ';
+    setTimeout(() => { if (b.dataset.armed === '1') { delete b.dataset.armed; loanSel(); } }, 4000); return;
+  }
+  b.disabled = true;
+  delete b.dataset.armed;
+  try { const r = await api('deleteCartLoans', { ids }); ids.forEach(id => loanChecked.delete(id)); await loadCartsAdmin(); setStatus('lStatus', 'ลบประวัติแล้ว ' + r.deleted + ' รายการ', 'ok'); }
+  catch (err) { setStatus('lStatus', err.message, 'err'); loanSel(); }
+};
+
 $('cartForm').addEventListener('submit', async e => {
   e.preventDefault(); $('cAdd').disabled = true;
   try {
