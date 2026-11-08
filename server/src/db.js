@@ -39,8 +39,19 @@ async function init() {
   }
   try {
     await conn.query(sql);
+    // ปรับตารางจากเวอร์ชันก่อน: เพิ่มคอลัมน์ที่ยังไม่มี
+    const [cols] = await conn.query("SELECT COLUMN_NAME c FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users'");
+    if (!cols.some(x => x.c === 'phone')) {
+      await conn.query("ALTER TABLE users ADD COLUMN phone VARCHAR(20) NULL COMMENT 'เบอร์โทรศัพท์ (ตัวเลขล้วน เช่น 0812345678) ใช้เข้าสู่ระบบแทนอีเมลได้' AFTER name, ADD UNIQUE KEY uq_users_phone (phone)");
+    }
+    const [[vb]] = await conn.query("SELECT COLUMN_TYPE t FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'cart_loans' AND COLUMN_NAME = 'verified_by'");
+    if (vb && !/'login'/.test(vb.t)) {
+      await conn.query("ALTER TABLE cart_loans MODIFY verified_by ENUM('pin','confirm','login') NOT NULL COMMENT 'pin / confirm = ติ๊กยืนยันชื่อที่หน้าแรก / login = กดจากในแอป (เข้าสู่ระบบแล้ว)'");
+    }
     const [[c]] = await conn.query('SELECT COUNT(*) n FROM products');
     if (!c.n) await conn.query('INSERT INTO products (code, name, unit, active) VALUES ?', [SEED_PRODUCTS.map(r => r.concat([1]))]);
+    const [[cc]] = await conn.query('SELECT COUNT(*) n FROM carts');
+    if (!cc.n) await conn.query('INSERT INTO carts (id, name) VALUES ?', [[['CART-01', 'รถเข็น 1'], ['CART-02', 'รถเข็น 2'], ['CART-03', 'รถเข็น 3']]]);
   } finally {
     await conn.end();
   }

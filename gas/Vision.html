@@ -36,10 +36,10 @@
         };
       }
     });
-    // อุ่นเครื่องด้วยขนาดเดียวกับ embed (2 ภาพ: ปกติ + กลับด้าน) แล้วรอผลจริง
+    // อุ่นเครื่องด้วยขนาดเดียวกับ embed (4 มุมมอง: เต็มภาพ/กลางภาพ × ปกติ/กลับด้าน) แล้วรอผลจริง
     // บน WebGL ผลรอบแรกของ shape ใหม่อาจผิด ถ้าไม่อุ่นเครื่องแบบนี้ภาพแรกที่ถ่ายจะถูกจำผิด
     for (let i = 0; i < 2; i++) {
-      const w = tf.tidy(() => run(tf.zeros([2, 224, 224, 3])).mean(0));
+      const w = tf.tidy(() => run(tf.zeros([4, 224, 224, 3])).mean(0));
       await w.data(); w.dispose();
     }
     ready = true;
@@ -63,15 +63,16 @@
     return t[graph.output];
   }
 
-  /* วาดภาพลงสี่เหลี่ยมจัตุรัส 224x224 (ไม่ตัดขอบ เติมสีเทา) */
-  function toCanvas(src, size) {
-    size = size || 224;
-    const w = src.naturalWidth || src.videoWidth || src.width, h = src.naturalHeight || src.videoHeight || src.height;
+  /* วาดภาพลงสี่เหลี่ยมจัตุรัส 224x224 (ไม่ตัดขอบ เติมสีเทา) crop < 1 = ตัดเอาเฉพาะกลางภาพ (เช่น 0.8 = 80%) */
+  function toCanvas(src, size, crop) {
+    size = size || 224; crop = crop || 1;
+    const W0 = src.naturalWidth || src.videoWidth || src.width, H0 = src.naturalHeight || src.videoHeight || src.height;
+    const w = W0 * crop, h = H0 * crop, sx = (W0 - w) / 2, sy = (H0 - h) / 2;
     const c = document.createElement('canvas'); c.width = c.height = size;
     const ctx = c.getContext('2d'); ctx.fillStyle = 'rgb(128,128,128)'; ctx.fillRect(0, 0, size, size);
     const s = size / Math.max(w, h), dw = w * s, dh = h * s;
     ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(src, (size - dw) / 2, (size - dh) / 2, dw, dh);
+    ctx.drawImage(src, sx, sy, w, h, (size - dw) / 2, (size - dh) / 2, dw, dh);
     return c;
   }
 
@@ -80,14 +81,15 @@
     n = Math.sqrt(n) || 1; for (let i = 0; i < v.length; i++) v[i] /= n; return v;
   }
 
-  /* คืนค่าเวกเตอร์ลักษณะเฉพาะของภาพ (ใช้ทั้งภาพปกติและภาพกลับด้านเฉลี่ยกัน เพื่อให้ทนต่อมุมกล้อง) */
+  /* คืนค่าเวกเตอร์ลักษณะเฉพาะของภาพ: เฉลี่ย 4 มุมมอง (เต็มภาพ + กลางภาพ 80% แต่ละแบบปกติและกลับด้าน)
+     ทำให้ทนต่อมุมกล้อง ระยะถ่าย และพื้นหลังรอบ ๆ อุปกรณ์ ได้ผลแม่นกว่าการดูภาพเดียว */
   async function embed(src) {
     if (!ready) throw new Error('โมเดลยังโหลดไม่เสร็จ');
-    const c = toCanvas(src);
+    const views = [toCanvas(src, 224, 1), toCanvas(src, 224, 0.8)];
     const out = tf.tidy(() => {
-      const x = tf.browser.fromPixels(c).toFloat().div(127.5).sub(1).expandDims(0);
-      const both = tf.concat([x, tf.reverse(x, 2)], 0);
-      return run(both).mean(0);
+      const xs = views.map(c => tf.browser.fromPixels(c).toFloat().div(127.5).sub(1).expandDims(0));
+      const all = tf.concat(xs.concat(xs.map(x => tf.reverse(x, 2))), 0);
+      return run(all).mean(0);
     });
     const v = await out.data(); out.dispose();
     return normalize(Float32Array.from(v));
@@ -95,15 +97,26 @@
 
   function cosine(a, b) { let s = 0; for (let i = 0; i < a.length; i++) s += a[i] * b[i]; return s; }
 
-  /* เทียบกับภาพอ้างอิงทั้งหมด คืนอันดับสินค้าตามความคล้ายสูงสุด */
+  /* เทียบภาพของพนักงานกับภาพอ้างอิงที่ผู้ดูแลใส่ไว้ทั้งหมด แล้วให้คะแนนแต่ละอุปกรณ์จาก 3 ส่วน:
+       50% ภาพอ้างอิงที่เหมือนที่สุด, 30% ค่าเฉลี่ย 3 ภาพที่เหมือนที่สุด, 20% ความเหมือนกับ "ภาพเฉลี่ย" ของอุปกรณ์นั้น
+     ยิ่งผู้ดูแลใส่ภาพหลายมุมต่ออุปกรณ์ ยิ่งแม่น / มั่นใจ = คะแนนถึงเกณฑ์ และทิ้งห่างอันดับสองพอ */
   function match(vec, refs, opts) {
-    opts = Object.assign({ threshold: 0.45, margin: 0.08 }, opts || {});   // ปรับจากการทดสอบ: ภาพจริง 0.45–0.76, ภาพไม่เกี่ยวข้อง ≤ 0.35 ส่วนใหญ่
-    const best = {};
+    opts = Object.assign({ threshold: 0.45, margin: 0.07 }, opts || {});   // ภาพจริง ~0.45–0.8, ภาพไม่เกี่ยวข้อง ≤ 0.35 ส่วนใหญ่
+    const by = {};
     refs.forEach(r => {
+      const g = by[r.code] || (by[r.code] = { code: r.code, name: r.name, sims: [], sum: new Float32Array(vec.length), best: null });
       const s = cosine(vec, r.vec);
-      if (!best[r.code] || s > best[r.code].score) best[r.code] = { code: r.code, name: r.name, score: s, refId: r.id };
+      g.sims.push(s);
+      for (let i = 0; i < vec.length; i++) g.sum[i] += r.vec[i];
+      if (!g.best || s > g.best.score) g.best = { score: s, refId: r.id, thumb: r.thumb || '' };
     });
-    const ranked = Object.values(best).sort((a, b) => b.score - a.score);
+    const ranked = Object.values(by).map(g => {
+      const sims = g.sims.slice().sort((a, b) => b - a), k = Math.min(3, sims.length);
+      const topk = sims.slice(0, k).reduce((a, b) => a + b, 0) / k;
+      const proto = cosine(vec, normalize(g.sum));
+      const score = 0.5 * sims[0] + 0.3 * topk + 0.2 * proto;
+      return { code: g.code, name: g.name, score, best: sims[0], refs: sims.length, refId: g.best.refId, thumb: g.best.thumb };
+    }).sort((a, b) => b.score - a.score);
     const top = ranked[0], second = ranked[1];
     const confident = !!top && top.score >= opts.threshold && (!second || top.score - second.score >= opts.margin);
     return { top, ranked, confident };

@@ -1,7 +1,8 @@
 /*
  * Cargo Bot: เซิร์ฟเวอร์ Node.js + MySQL
  *
- *   GET  /                หน้าแอป (gas/Index.html เดิม) หน้าเว็บเรียก google.script.run.rpc → POST /rpc
+ *   GET  /                หน้าแรก: ระบบการใช้รถเข็น (views/cart.html) ไม่ต้องเข้าสู่ระบบ
+ *   GET  /app             แอปบันทึกการขนส่ง + ผู้ดูแลระบบ (gas/Index.html) หน้าเว็บเรียก google.script.run.rpc → POST /rpc
  *   POST /rpc             { action, params, session }
  *   GET|POST /api         API สำหรับ ESP32 / ระบบภายนอก (เหมือน /exec ของ Apps Script) /exec ใช้ได้ด้วย
  *                         POST body JSON: {"token":"cb_...","deviceId":"ESP32-01","action":"saveMove","code":"TABLE","qty":2}
@@ -35,11 +36,10 @@ google.script = { run: (function () {
 })() };
 </script>`;
 
-function renderIndex(ticket) {
+function renderIndex() {
   const html = fs.readFileSync(path.join(GAS, 'Index.html'), 'utf8')
-    .replace(/<\?!=\s*include_\('(\w+)'\)\s*\?>/g, (_, n) => fs.readFileSync(path.join(GAS, n + '.html'), 'utf8'))
-    .replace('<?= loginTicket ?>', /^[^~\s<>"'\\]+~\d+~[0-9a-f]{64}$/.test(ticket || '') ? ticket : '');
-  return html.replace('<head>', '<head>\n<meta name="viewport" content="width=device-width, initial-scale=1">\n<title>Cargo Bot ขนส่งอุปกรณ์</title>\n' + SHIM);
+    .replace(/<\?!=\s*include_\('(\w+)'\)\s*\?>/g, (_, n) => fs.readFileSync(path.join(GAS, n + '.html'), 'utf8'));
+  return html.replace('<head>', '<head>\n<meta name="viewport" content="width=device-width, initial-scale=1">\n<title>Cargo Bot · ระบบรถขนส่งอเนกประสงค์</title>\n' + SHIM);
 }
 
 const baseUrl = req => (req.headers['x-forwarded-proto'] || req.protocol) + '://' + (req.headers['x-forwarded-host'] || req.headers.host);
@@ -48,14 +48,21 @@ const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', true);
 
-app.get('/', (req, res) => {
-  res.set('Cache-Control', 'no-store').type('html').send(renderIndex(String(req.query.t || '')));
+/* หน้าแรก = ยืม-คืนรถเข็น (ไม่ต้องเข้าสู่ระบบ) ปุ่ม "ผู้ดูแลระบบ" ไปที่ /app */
+const cartPage = (req, res) => res.set('Cache-Control', 'no-store').sendFile(path.join(__dirname, '..', 'views', 'cart.html'));
+app.get('/', cartPage);
+/* แอปหลัก (บันทึกการขนส่ง / ผู้ดูแลระบบ) ต้องเข้าสู่ระบบ */
+app.get('/app', (req, res) => {
+  res.set('Cache-Control', 'no-store').type('html').send(renderIndex());
 });
+
+/* หน้ายืม-คืนรถเข็น (ใช้เบอร์โทร ไม่ต้องเข้าสู่ระบบ) /cart?cart=CART-01 = เลือกรถคันนี้ให้เลย (ใช้ทำ QR ติดรถ) */
+app.get('/cart', cartPage);
 
 app.post('/rpc', express.json({ limit: '12mb' }), async (req, res) => {
   const { action, params, session } = req.body || {};
   const p = Object.assign({}, params, { action: String(action || ''), session: session || '' });
-  res.json(await handle(p, { baseUrl: baseUrl(req) }));
+  res.json(await handle(p, { baseUrl: baseUrl(req), ip: req.ip }));
 });
 
 /* API ของ ESP32: รับ body เป็น text/plain หรือ application/json (เหมือน Apps Script) */

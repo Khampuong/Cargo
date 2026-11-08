@@ -15,11 +15,13 @@ CREATE TABLE IF NOT EXISTS products (
 CREATE TABLE IF NOT EXISTS users (
   email       VARCHAR(100) NOT NULL PRIMARY KEY COMMENT 'อีเมลที่ใช้เข้าสู่ระบบ (ตัวพิมพ์เล็ก)',
   name        VARCHAR(200) NOT NULL COMMENT 'ชื่อ-นามสกุล',
+  phone       VARCHAR(20)  NULL COMMENT 'เบอร์โทรศัพท์ (ตัวเลขล้วน เช่น 0812345678) ใช้เข้าสู่ระบบแทนอีเมลได้',
   role        ENUM('user','admin') NOT NULL DEFAULT 'user' COMMENT 'user = พนักงาน, admin = ผู้ดูแลระบบ',
   active      TINYINT(1)   NOT NULL DEFAULT 1 COMMENT 'เปิดใช้งานบัญชี',
   pass_hash   VARCHAR(200) NOT NULL DEFAULT '' COMMENT 'รหัสผ่านที่เข้ารหัสแล้ว (v1$salt$hash) ว่าง = ยังไม่ได้ตั้ง',
   last_login  DATETIME     NULL COMMENT 'เข้าระบบล่าสุด',
-  created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'วันที่สร้างบัญชี'
+  created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'วันที่สร้างบัญชี',
+  UNIQUE KEY uq_users_phone (phone)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='บัญชีผู้ใช้งาน';
 
 -- สถานที่รับ / สถานที่ส่ง (ตัวเลือกในฟอร์ม)
@@ -90,6 +92,30 @@ CREATE TABLE IF NOT EXISTS refs (
   ts          DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'วันที่เพิ่ม',
   KEY ix_refs_code (code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='ภาพที่ใช้จดจำอุปกรณ์';
+
+-- รถเข็น (ผู้ดูแลเพิ่ม/ปิด)
+CREATE TABLE IF NOT EXISTS carts (
+  id          VARCHAR(32)  NOT NULL PRIMARY KEY COMMENT 'รหัสรถเข็น (เช่น CART-01 ใช้ทำ QR ติดรถ)',
+  name        VARCHAR(100) NOT NULL COMMENT 'ชื่อรถเข็น',
+  active      TINYINT(1)   NOT NULL DEFAULT 1 COMMENT 'ให้ยืมได้ (0 = ปิด/ซ่อม)',
+  created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='รถเข็น';
+
+-- การยืม-คืนรถเข็น (returned_at ว่าง = ยังไม่คืน)
+CREATE TABLE IF NOT EXISTS cart_loans (
+  id          VARCHAR(20)  NOT NULL PRIMARY KEY COMMENT 'รหัสการยืม',
+  cart_id     VARCHAR(32)  NOT NULL COMMENT 'รถเข็นที่ยืม',
+  cart_name   VARCHAR(100) NOT NULL COMMENT 'ชื่อรถเข็น ณ ตอนยืม',
+  email       VARCHAR(100) NOT NULL COMMENT 'บัญชีพนักงานผู้ยืม',
+  name        VARCHAR(200) NOT NULL COMMENT 'ชื่อผู้ยืม ณ ตอนยืม',
+  phone       VARCHAR(20)  NOT NULL DEFAULT '' COMMENT 'เบอร์โทรที่ใช้ยืนยัน',
+  verified_by ENUM('pin','confirm','login') NOT NULL COMMENT 'pin / confirm = ติ๊กยืนยันชื่อที่หน้าแรก / login = กดจากในแอป (เข้าสู่ระบบแล้ว)',
+  borrowed_at DATETIME     NOT NULL COMMENT 'เวลายืม (UTC)',
+  returned_at DATETIME     NULL COMMENT 'เวลาคืน (UTC) ว่าง = ยังไม่คืน',
+  returned_by VARCHAR(120) NOT NULL DEFAULT '' COMMENT 'self = ผู้ยืมคืนเอง / admin:อีเมล = ผู้ดูแลบันทึกคืนให้',
+  KEY ix_loans_open (returned_at, cart_id),
+  KEY ix_loans_email (email, returned_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='การยืม-คืนรถเข็น';
 
 -- เซสชันหน้าเว็บ (เข้าระบบรอบเดียว) เก็บแฮชของ session ไม่เก็บค่าจริง
 CREATE TABLE IF NOT EXISTS sessions (

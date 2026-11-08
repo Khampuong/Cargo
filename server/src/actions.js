@@ -8,7 +8,7 @@ const { q, one, getSetting, setSetting } = require('./db');
 const { fmt, dt, randomHex, sha256, hmacHex, sameText, fail, cache, withLock, isOn, str } = require('./util');
 
 const ROOT = path.join(__dirname, '..', '..');
-const ADMIN_EMAILS = String(process.env.ADMIN_EMAILS || 'phatthachada.k@gmail.com').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+const ADMIN_EMAILS = String(process.env.ADMIN_EMAILS || 'methas@gmail.com').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
 const SESSION_DAYS = Number(process.env.SESSION_DAYS || 365);
 const PHOTO_DIR = path.resolve(process.env.PHOTO_DIR || path.join(__dirname, '..', 'data', 'photos'));
 const MODEL_PATH = path.resolve(process.env.MODEL_FILE || path.join(ROOT, 'model', 'cargo_model_weights.b64.txt'));
@@ -19,20 +19,29 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ROLES = {
   device: ['ping', 'heartbeat', 'products', 'lookup', 'saveMove'],
   user: ['ping', 'me', 'logout', 'products', 'lookup', 'places', 'saveMove', 'dashboard',
-    'refs', 'addRef', 'modelInfo', 'modelChunk', 'myAssignments', 'setMyPassword'],
+    'refs', 'modelInfo', 'modelChunk',   // ภาพอ้างอิง (addRef) เพิ่มได้เฉพาะผู้ดูแล
+    'myAssignments', 'myCart', 'borrowMyCart', 'returnMyCart'],   // พนักงานไม่มีการตั้งรหัสผ่าน
   admin: ['*']
 };
 const ROLE_TH = { user: 'พนักงาน', admin: 'ผู้ดูแลระบบ' };
-const PUBLIC = ['emailLogin', 'googleLogin', 'gmailLogin', 'ticketLogin', 'authConfig'];
+const PUBLIC = ['emailLogin', 'authConfig', 'phoneName',
+  'cartLookup', 'cartBorrow', 'cartReturn', 'phoneLogin'];
 const PLACE_TYPES = { pickup: 'สถานที่รับ', dropoff: 'สถานที่ส่ง', both: 'รับและส่ง' };
 
 const ACTIONS = {
   ping: () => ({ message: 'pong' }),
   heartbeat: () => ({ intervalSec: 60 }),
-  emailLogin, googleLogin, ticketLogin,
-  gmailLogin: () => fail('no_gmail', 'การเข้าด้วยบัญชี Gmail ที่เปิดอยู่ ใช้ได้เฉพาะเวอร์ชัน Apps Script'),
-  setMyPassword,
-  authConfig: async () => ({ googleClientId: await googleClientId(), emailLogin: await emailOnlyAllowed(), gmail: '', loginAppUrl: loginAppUrl() }),
+  emailLogin,
+  setMyPassword, phoneName,
+  // รถเข็น: หน้ายืม-คืน (/cart) ใช้เบอร์โทร ไม่ต้องเข้าสู่ระบบ
+  cartLookup, cartBorrow, cartReturn, phoneLogin,
+  myCart, borrowMyCart, returnMyCart,   // ปุ่มยืม/คืนรถเข็นในแอป (เข้าสู่ระบบแล้ว)
+  // รถเข็น: ผู้ดูแลระบบ
+  carts: async () => ({ carts: await listCarts() }),
+  saveCart, deleteCart,
+  cartLoans: async p => ({ loans: await listCartLoans(p) }),
+  forceReturn,
+  authConfig: () => ({ emailLogin: emailOnlyAllowed() }),
   me: (p, who) => ({ user: publicUser(who) }),
   logout: async p => { await endSession(p.session); return {}; },
   products: async () => ({ products: await getProducts() }),
@@ -55,9 +64,7 @@ const ACTIONS = {
   saveUser: (p, who) => withLock(() => saveUserRow(p, who)),
   deleteUser,
   allProducts: async () => ({ products: await listAllProducts() }),
-  saveProduct, deleteRef,
-  googleSettings: async () => ({ clientId: await googleClientId(), inCode: !!process.env.GOOGLE_CLIENT_ID }),
-  enableGoogle, disableGoogle,
+  saveProduct, deleteProduct, deleteRef,
   systemToken: async (p, who, via) => ({ token: await systemToken(false), apiUrl: await apiUrl(via), devices: await listDevices() }),
   regenToken: async (p, who, via) => ({ token: await systemToken(true), apiUrl: await apiUrl(via) }),
   setDevice, deleteDevice
@@ -208,69 +215,35 @@ async function loginRow(email, name) {
   return row;
 }
 
-/* ---------- Google Sign-In (Client ID ของ Google Identity Services) ---------- */
-async function googleClientId() { return await getSetting('GOOGLE_CLIENT_ID') || process.env.GOOGLE_CLIENT_ID || ''; }
-
-async function verifyGoogleIdToken(credential, clientId) {
-  if (!/^[\w-]+\.[\w-]+\.[\w-]+$/.test(credential)) fail('bad_credential', 'ข้อมูลเข้าสู่ระบบจาก Google ไม่ถูกต้อง');
-  let res;
-  try { res = await fetch('https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(credential)); }
-  catch (e) { fail('bad_credential', 'ติดต่อ Google ไม่ได้ กรุณาลองใหม่'); }
-  if (res.status !== 200) fail('bad_credential', 'Google ไม่ยืนยันการเข้าสู่ระบบนี้ กรุณาลองใหม่');
-  const info = await res.json();
-  if (info.aud !== clientId) fail('bad_credential', 'Client ID ไม่ตรงกับที่ตั้งค่าไว้');
-  if (['accounts.google.com', 'https://accounts.google.com'].indexOf(info.iss) < 0) fail('bad_credential', 'ผู้ออก token ไม่ใช่ Google');
-  if (Number(info.exp) * 1000 < Date.now()) fail('bad_credential', 'การเข้าสู่ระบบหมดอายุ กรุณาลองใหม่');
-  if (str(info.email_verified) !== 'true') fail('bad_credential', 'อีเมล Google นี้ยังไม่ได้ยืนยัน');
-  return info;
+/* ---------- เบอร์โทร/อีเมล + รหัสผ่าน (เข้ากันได้กับแฮชจากเวอร์ชัน Apps Script) ---------- */
+/* EMAIL_ONLY_LOGIN=1 = ยอมให้เข้าด้วยอีเมลอย่างเดียว ไม่มีรหัสผ่าน (ใช้เฉพาะทดลองในเครื่อง) */
+function emailOnlyAllowed() {
+  return process.env.EMAIL_ONLY_LOGIN === '1';
 }
 
-async function googleLogin(p) {
-  const clientId = await googleClientId();
-  if (!clientId) fail('google_disabled', 'ยังไม่ได้ตั้งค่า Google Login');
-  const info = await verifyGoogleIdToken(str(p.credential), clientId);
-  const row = await loginRow(info.email, info.name);
-  if (!str(row.name).trim() && info.name) await q('UPDATE users SET name = ? WHERE email = ?', [str(info.name).slice(0, 200), row.email]);
-  return startSession(row);
-}
-
-async function enableGoogle(p, who) {
-  const clientId = str(p.clientId).trim();
-  if (!/^[\w-]+\.apps\.googleusercontent\.com$/.test(clientId)) fail('bad_client_id', 'Client ID ต้องลงท้ายด้วย .apps.googleusercontent.com');
-  const info = await verifyGoogleIdToken(str(p.credential), clientId);
-  if (str(info.email).toLowerCase() !== who.email) fail('wrong_account', 'ทดสอบด้วยบัญชี ' + info.email + ' แต่คุณเข้าระบบอยู่ด้วย ' + who.email + ' กรุณาเลือกบัญชีเดียวกัน');
-  await setSetting('GOOGLE_CLIENT_ID', clientId);
-  return { clientId };
-}
-
-async function disableGoogle() {
-  if (process.env.GOOGLE_CLIENT_ID) fail('in_code', 'Client ID ตั้งไว้ใน .env (GOOGLE_CLIENT_ID) ต้องลบออกแล้วเริ่มเซิร์ฟเวอร์ใหม่');
-  await setSetting('GOOGLE_CLIENT_ID', '');
-  return {};
-}
-
-/* ---------- Continue with Google ผ่านแอปยืนยันตัวตน gas-login (ticket ที่เซ็นด้วย LOGIN_SECRET) ---------- */
-function loginAppUrl() { return process.env.LOGIN_SECRET ? str(process.env.LOGIN_APP_URL) : ''; }
-
-async function ticketLogin(p) {
-  const bad = msg => fail('bad_ticket', msg + ' กรุณากด "Continue with Google" ใหม่');
-  const m = str(p.ticket).match(/^([^~\s]+)~(\d+)~([0-9a-f]{64})$/);
-  const secret = process.env.LOGIN_SECRET;
-  if (!m || !secret) bad('ข้อมูลเข้าสู่ระบบไม่ถูกต้อง');
-  if (!sameText(hmacHex(m[1] + '~' + m[2], secret), m[3])) bad('ข้อมูลเข้าสู่ระบบไม่ถูกต้อง');
-  if (Number(m[2]) < Date.now()) bad('ลิงก์เข้าสู่ระบบหมดอายุแล้ว');
-  if (cache.get('tk:' + m[3])) bad('ลิงก์เข้าสู่ระบบนี้ถูกใช้ไปแล้ว');
-  cache.put('tk:' + m[3], '1', 600);
-  return startSession(await loginRow(m[1]));
-}
-
-/* ---------- อีเมล + รหัสผ่าน (เข้ากันได้กับแฮชจากเวอร์ชัน Apps Script) ---------- */
-async function emailOnlyAllowed() {
-  return process.env.EMAIL_ONLY_LOGIN === '1' && !await googleClientId() && !loginAppUrl();
-}
-
+/* รหัสผ่านหรือ PIN อย่างน้อย 6 ตัว (ใส่ผิด 5 ครั้งล็อก 15 นาที) */
 function checkPassword(pass) {
-  if (pass.length < 8 || pass.length > 128) fail('weak_password', 'รหัสผ่านต้องยาว 8-128 ตัวอักษร');
+  if (pass.length < 6 || pass.length > 128) fail('weak_password', 'รหัสผ่านต้องยาว 6-128 ตัวอักษร (ใช้ PIN 6 หลักได้)');
+}
+
+/* เบอร์โทร 10 หลัก ขึ้นต้น 0 เช่น "081-234-5678" หรือ "+66 81 234 5678" → "0812345678" (ไม่ครบ 10 หลัก = "") */
+function normalizePhone(raw) {
+  let s = str(raw).replace(/[\s\-().]/g, '');
+  if (/^\+?66\d{9}$/.test(s)) s = '0' + s.replace(/^\+?66/, '');
+  return /^0\d{9}$/.test(s) ? s : '';
+}
+const findUserByPhone = phone => one('SELECT * FROM users WHERE phone = ?', [phone]);
+
+/* หน้าเข้าสู่ระบบ: พิมพ์เบอร์โทรแล้วแสดงชื่อพนักงาน (จำกัด 30 ครั้ง / 5 นาที ต่อ IP กันการไล่เดาเบอร์) */
+async function phoneName(p, who, via) {
+  const phone = normalizePhone(p.phone);
+  if (!phone) fail('bad_phone', 'เบอร์โทรศัพท์ไม่ถูกต้อง');
+  const key = 'pn:' + str(via.ip), n = Number(cache.get(key) || 0);
+  if (n >= 30) fail('rate_limited', 'ค้นหาบ่อยเกินไป กรุณารอสักครู่');
+  cache.put(key, String(n + 1), 300);
+  const row = await findUserByPhone(phone);
+  if (!row || !row.active) fail('not_found', 'ไม่พบเบอร์นี้ในระบบ กรุณาแจ้งผู้ดูแลระบบ');
+  return { name: row.name };
 }
 function hashPassword(pass, salt) {
   salt = salt || randomHex().slice(0, 32);
@@ -283,23 +256,27 @@ function samePassword(pass, stored) {
   return !!m && sameText(hashPassword(pass, m[1]), stored);
 }
 
+/* เข้าด้วย อีเมล หรือ เบอร์โทรศัพท์ + รหัสผ่าน (ช่อง email รับได้ทั้งสองแบบ) */
 async function emailLogin(p) {
-  const email = str(p.email).trim().toLowerCase(), pass = str(p.password);
-  if (!EMAIL_RE.test(email)) fail('bad_email', 'กรุณาใส่อีเมลให้ถูกต้อง');
+  const id = str(p.email || p.phone).trim(), pass = str(p.password);
+  const email = EMAIL_RE.test(id) ? id.toLowerCase() : '', phone = email ? '' : normalizePhone(id);
+  if (!email && !phone) fail('bad_login_id', 'กรุณาใส่อีเมลหรือเบอร์โทรศัพท์ให้ถูกต้อง');
   if (!pass) {
-    if (!await emailOnlyAllowed()) fail('need_password', 'กรุณาใส่รหัสผ่าน หรือกด "Continue with Google"');
+    if (!email || !emailOnlyAllowed()) fail('need_password', 'กรุณาใส่รหัสผ่าน');
     return startSession(await loginRow(email));
   }
-  const key = 'pwfail:' + email, fails = Number(cache.get(key) || 0);
-  if (fails >= PASS_MAX_FAIL) fail('locked', 'ใส่รหัสผ่านผิดหลายครั้ง กรุณารอ 15 นาที หรือเข้าด้วย Google');
-  const row = await findUser(email);
+  const key = 'pwfail:' + (email || phone), fails = Number(cache.get(key) || 0);
+  if (fails >= PASS_MAX_FAIL) fail('locked', 'ใส่รหัสผ่านผิดหลายครั้ง กรุณารอ 15 นาที');
+  const row = email ? await findUser(email) : await findUserByPhone(phone);
   if (!row || !row.active || !samePassword(pass, row.pass_hash)) {
     cache.put(key, String(fails + 1), PASS_LOCK_SEC);
     fail('bad_login', row && row.active && !row.pass_hash
-      ? 'บัญชีนี้ยังไม่ได้ตั้งรหัสผ่าน กรุณาเข้าด้วย Google แล้วตั้งรหัสผ่านที่เมนู "ตั้งรหัสผ่าน" หรือให้ผู้ดูแลตั้งให้'
-      : 'อีเมลหรือรหัสผ่านไม่ถูกต้อง');
+      ? 'บัญชีนี้ยังไม่ได้ตั้งรหัสผ่าน กรุณาให้ผู้ดูแลระบบตั้งรหัสผ่าน/PIN ให้'
+      : (email ? 'อีเมล' : 'เบอร์โทรศัพท์') + 'หรือรหัสผ่านไม่ถูกต้อง');
   }
   cache.remove(key);
+  // แท็บ "ผู้ดูแลระบบ" ที่หน้าแรก: รับเฉพาะบัญชีผู้ดูแล
+  if (p.adminOnly && !(row.role === 'admin' || isAdminEmail(row.email))) fail('not_admin', 'บัญชีนี้ไม่ใช่ผู้ดูแลระบบ กรุณาเลือกแท็บ "พนักงาน"');
   return startSession(row);
 }
 
@@ -317,7 +294,7 @@ async function setMyPassword(p, who) {
 async function listUsers() {
   const rows = await q('SELECT * FROM users ORDER BY created_at, email');
   return rows.map(r => ({
-    email: r.email, name: r.name, role: r.role === 'admin' || isAdminEmail(r.email) ? 'admin' : 'user',
+    email: r.email, name: r.name, phone: r.phone || '', role: r.role === 'admin' || isAdminEmail(r.email) ? 'admin' : 'user',
     active: !!r.active, lastLogin: dt(r.last_login), fixed: isAdminEmail(r.email), hasPassword: !!r.pass_hash
   }));
 }
@@ -331,13 +308,19 @@ async function saveUserRow(p, who) {
   if (isAdminEmail(email) && (role !== 'admin' || !active)) fail('fixed_admin', email + ' เป็นผู้ดูแลระบบถาวร ลดสิทธิ์หรือปิดบัญชีไม่ได้');
   const pass = str(p.password);
   if (pass) checkPassword(pass);
+  const phone = str(p.phone).trim() ? normalizePhone(p.phone) : null;
+  if (phone === '') fail('bad_phone', 'เบอร์โทรศัพท์ต้องเป็นตัวเลข 10 หลัก ขึ้นต้นด้วย 0 (เช่น 0812345678)');
+  if (phone) {
+    const other = await findUserByPhone(phone);
+    if (other && other.email !== email) fail('exists', 'เบอร์ ' + phone + ' เป็นของ ' + other.name + ' อยู่แล้ว');
+  }
   const row = await findUser(email);
   if (p.isNew) {
     if (row) fail('exists', 'มีบัญชีอีเมล ' + email + ' อยู่แล้ว');
-    await q('INSERT INTO users (email, name, role, active, pass_hash) VALUES (?, ?, ?, ?, ?)', [email, name, role, active ? 1 : 0, pass ? hashPassword(pass) : '']);
+    await q('INSERT INTO users (email, name, phone, role, active, pass_hash) VALUES (?, ?, ?, ?, ?, ?)', [email, name, phone, role, active ? 1 : 0, pass ? hashPassword(pass) : '']);
   } else {
     if (!row) fail('not_found', 'ไม่พบบัญชีอีเมล ' + email);
-    await q('UPDATE users SET name = ?, role = ?, active = ? WHERE email = ?', [name, role, active ? 1 : 0, email]);
+    await q('UPDATE users SET name = ?, phone = ?, role = ?, active = ? WHERE email = ?', [name, phone, role, active ? 1 : 0, email]);
     if (pass) await q('UPDATE users SET pass_hash = ? WHERE email = ?', [hashPassword(pass), email]);
     else if (p.clearPassword) await q('UPDATE users SET pass_hash = "" WHERE email = ?', [email]);
     if (!active) await q('DELETE FROM sessions WHERE email = ?', [email]);
@@ -396,6 +379,16 @@ async function addProduct(p) {
     cache.remove('products');
     return { product: { code, name, unit } };
   });
+}
+
+/* ลบอุปกรณ์ + ภาพอ้างอิงของอุปกรณ์นั้น (บันทึกการขนส่งเดิมเก็บชื่ออุปกรณ์ไว้แล้ว จึงไม่หาย) */
+async function deleteProduct(p) {
+  const code = parseCode(p.code);
+  const r = await q('DELETE FROM products WHERE code = ?', [code]);
+  if (!r.affectedRows) fail('not_found', 'ไม่พบอุปกรณ์รหัส ' + code);
+  const refs = await q('DELETE FROM refs WHERE code = ?', [code]);
+  cache.remove('products');
+  return { code, refsDeleted: refs.affectedRows };
 }
 
 async function saveProduct(p) {
@@ -651,6 +644,174 @@ async function updateMove(p) {
 async function deleteMove(p) {
   const r = await q('DELETE FROM moves WHERE id = ?', [str(p.id)]);
   if (!r.affectedRows) fail('not_found', 'ไม่พบรายการนี้ (อาจถูกลบไปแล้ว)');
+  return {};
+}
+
+/* ---------- ยืม-คืนรถเข็น ----------
+   ขั้นตอน (หน้า /cart): ใส่เบอร์โทร → ระบบแสดงชื่อพนักงาน → เลือกรถเข็น → ยืนยันตัวตน → หน้าจอยืนยันการใช้
+   คืน: ใส่เบอร์โทร → เห็นรถที่ยืมอยู่ → ยืนยันตัวตน → หน้าจอยืนยันการคืน
+   ยืนยันตัวตน: พนักงานที่ตั้ง PIN/รหัสผ่านไว้ ต้องใส่ PIN (ผิด 5 ครั้งล็อก 15 นาที), ยังไม่ได้ตั้ง = กดยืนยันว่าเป็นตัวเอง
+   กติกา: คนละ 1 คันในเวลาเดียวกัน, รถที่ถูกยืมอยู่ยืมซ้ำไม่ได้ */
+/* หน้าแรก: ระบุตัวพนักงานด้วย เบอร์โทร 10 หลัก หรือ อีเมล (ส่งมาในช่อง phone) */
+async function cartPerson(p, via) {
+  const id = str(p.phone).trim();
+  const email = EMAIL_RE.test(id) ? id.toLowerCase() : '', phone = email ? '' : normalizePhone(id);
+  if (!email && !phone) fail('bad_phone', 'กรุณาใส่เบอร์โทร 10 หลัก หรืออีเมลให้ถูกต้อง');
+  const key = 'cart:' + str(via.ip), n = Number(cache.get(key) || 0);
+  if (n >= 60) fail('rate_limited', 'ใช้งานบ่อยเกินไป กรุณารอสักครู่');
+  cache.put(key, String(n + 1), 300);
+  const row = email ? await findUser(email) : await findUserByPhone(phone);
+  if (!row || !row.active) fail('not_found', 'ไม่พบ' + (email ? 'อีเมล ' + email : 'เบอร์ ' + phone) + ' ในระบบ กรุณาแจ้งผู้ดูแลระบบให้ลงทะเบียน');
+  return row;
+}
+
+/* หน้าแรก (แท็บพนักงาน): ยืนยันตัวตนด้วยการติ๊ก "ฉันคือ …" ไม่ต้องใส่ PIN
+   (ผู้ดูแลระบบเข้าสู่ระบบได้เฉพาะแท็บผู้ดูแลระบบด้วยรหัสผ่าน ดู cartSession) */
+async function verifyPerson(row, p) {
+  if (p.confirm !== true) fail('need_confirm', 'กรุณาติ๊กยืนยันว่าคุณคือ ' + row.name);
+  return 'confirm';
+}
+
+const openLoanOf = email => one('SELECT * FROM cart_loans WHERE email = ? AND returned_at IS NULL ORDER BY borrowed_at DESC LIMIT 1', [email]);
+const loanOut = l => l && ({
+  id: l.id, cartId: l.cart_id, cartName: l.cart_name, name: l.name, phone: l.phone, verifiedBy: l.verified_by,
+  borrowedAt: dt(l.borrowed_at), since: fmt(l.borrowed_at, 'HH:mm'), returnedAt: dt(l.returned_at), returnedBy: l.returned_by || '',
+  minutes: Math.max(0, Math.round(((l.returned_at || new Date()) - l.borrowed_at) / 60000))
+});
+const availableCarts = () => q(`SELECT c.id, c.name FROM carts c WHERE c.active = 1
+  AND NOT EXISTS (SELECT 1 FROM cart_loans l WHERE l.cart_id = c.id AND l.returned_at IS NULL) ORDER BY c.id`);
+
+async function cartLookup(p, who, via) {
+  const row = await cartPerson(p, via);
+  const admin = row.role === 'admin' || isAdminEmail(row.email);
+  return { name: row.name, hasPin: false, admin, loan: await loanWithMoves(await openLoanOf(row.email)), carts: await availableCarts() };
+}
+
+/* หน้าแรก: เข้าสู่ระบบด้วยเบอร์โทร โดยไม่ยืม/คืนรถเข็น (ยืนยันตัวตนแบบเดียวกัน) */
+async function phoneLogin(p, who, via) {
+  const row = await cartPerson(p, via);
+  const verified = await verifyPerson(row, p);
+  const s = await cartSession(row, verified);
+  if (!s.session) fail('use_admin_tab', 'ผู้ดูแลระบบกรุณาเข้าสู่ระบบที่แท็บ "ผู้ดูแลระบบ" ด้วยรหัสผ่าน');
+  return s;
+}
+
+async function cartBorrow(p, who, via) {
+  const row = await cartPerson(p, via);
+  const verified = await verifyPerson(row, p);
+  const loan = await borrowFor(row, p.cartId, verified);
+  return Object.assign({ loan }, await cartSession(row, verified));
+}
+
+/* ยืมรถเข็นให้พนักงานคนนี้ (ใช้ทั้งหน้าแรกและปุ่มในแอป) */
+function borrowFor(row, cartId0, verified) {
+  const cartId = str(cartId0).trim().toUpperCase();
+  return withLock(async () => {
+    const mine = await openLoanOf(row.email);
+    if (mine) fail('has_cart', 'คุณยืม ' + mine.cart_name + ' อยู่ กรุณาคืนก่อนยืมคันใหม่');
+    const cart = await one('SELECT * FROM carts WHERE id = ?', [cartId]);
+    if (!cart || !cart.active) fail('not_found', 'ไม่พบรถเข็น ' + cartId + ' หรือรถเข็นนี้ปิดใช้งานอยู่');
+    const busy = await one('SELECT name FROM cart_loans WHERE cart_id = ? AND returned_at IS NULL', [cart.id]);
+    if (busy) fail('cart_busy', cart.name + ' ถูกยืมโดย ' + busy.name + ' อยู่');
+    const loan = { id: 'l_' + randomHex().slice(0, 16), cart_id: cart.id, cart_name: cart.name, email: row.email, name: row.name,
+      phone: row.phone || '', verified_by: verified, borrowed_at: new Date() };
+    await q('INSERT INTO cart_loans SET ?', [loan]);
+    return loanOut(loan);
+  });
+}
+
+/* คืนรถเข็นที่พนักงานคนนี้ยืมอยู่ */
+/* จำนวนบันทึกการขนส่งที่พนักงานคนนี้บันทึกระหว่างยืมรถคันนี้ (บันทึกจากหน้าเว็บ = source web:อีเมล) */
+async function loanMoves(loan) {
+  const r = await one('SELECT COUNT(*) n FROM moves WHERE source = ? AND ts >= ?', ['web:' + loan.email, loan.borrowed_at]);
+  return Number(r.n) || 0;
+}
+async function loanWithMoves(loan) {
+  if (!loan) return null;
+  return Object.assign(loanOut(loan), { moves: await loanMoves(loan) });
+}
+
+/* คืนรถเข็นที่พนักงานคนนี้ยืมอยู่: ต้องบันทึกการขนส่งอย่างน้อย 1 รายการระหว่างยืมก่อน */
+function returnFor(row) {
+  return withLock(async () => {
+    const loan = await openLoanOf(row.email);
+    if (!loan) fail('no_loan', 'คุณไม่มีรถเข็นที่ยืมอยู่');
+    if (!await loanMoves(loan)) fail('need_move', 'กรุณาบันทึกการขนส่งก่อน จึงจะคืนรถเข็นได้');
+    loan.returned_at = new Date(); loan.returned_by = 'self';
+    await q('UPDATE cart_loans SET returned_at = ?, returned_by = ? WHERE id = ?', [loan.returned_at, 'self', loan.id]);
+    return loanOut(loan);
+  });
+}
+
+/* ในแอป (เข้าสู่ระบบแล้ว): ปุ่มยืม/คืนรถเข็น ไม่ต้องยืนยันตัวตนซ้ำ */
+async function myCart(p, who) {
+  return { loan: await loanWithMoves(await openLoanOf(who.email)), carts: await availableCarts() };
+}
+async function borrowMyCart(p, who) {
+  const row = await findUser(who.email);
+  return { loan: await borrowFor(row, p.cartId, 'login') };
+}
+async function returnMyCart(p, who) {
+  const row = await findUser(who.email);
+  return { loan: await returnFor(row) };
+}
+
+/* ยืนยันตัวตนแล้ว → เข้าสู่ระบบแอปหลัก (/app) ให้เลย (ผู้ดูแลต้องยืนยันด้วย PIN เท่านั้น การติ๊กชื่อไม่พอ) */
+async function cartSession(row, verified) {
+  const admin = row.role === 'admin' || isAdminEmail(row.email);
+  if (admin && verified !== 'pin') return {};
+  const s = await startSession(row);
+  return { session: s.session, user: s.user };
+}
+
+async function cartReturn(p, who, via) {
+  const row = await cartPerson(p, via);
+  const verified = await verifyPerson(row, p);
+  const loan = await returnFor(row);
+  return Object.assign({ loan }, await cartSession(row, verified));
+}
+
+async function listCarts() {
+  const rows = await q(`SELECT c.*, l.id loan_id, l.name loan_name, l.phone loan_phone, l.borrowed_at
+    FROM carts c LEFT JOIN cart_loans l ON l.cart_id = c.id AND l.returned_at IS NULL ORDER BY c.id`);
+  return rows.map(r => ({
+    id: r.id, name: r.name, active: !!r.active,
+    loan: r.loan_id ? { id: r.loan_id, name: r.loan_name, phone: r.loan_phone, borrowedAt: dt(r.borrowed_at) } : null
+  }));
+}
+
+async function saveCart(p) {
+  const id = str(p.id).trim().toUpperCase(), name = str(p.name).trim().slice(0, 100);
+  if (!/^[A-Z0-9_-]{1,32}$/.test(id)) fail('bad_code', 'รหัสรถเข็นใช้ได้เฉพาะ A-Z 0-9 _ - ไม่เกิน 32 ตัว');
+  if (!name) fail('no_name', 'กรุณาใส่ชื่อรถเข็น');
+  const row = await one('SELECT id FROM carts WHERE id = ?', [id]);
+  if (p.isNew) {
+    if (row) fail('exists', 'มีรถเข็นรหัส ' + id + ' อยู่แล้ว');
+    await q('INSERT INTO carts (id, name, active) VALUES (?, ?, ?)', [id, name, p.active !== false ? 1 : 0]);
+  } else {
+    if (!row) fail('not_found', 'ไม่พบรถเข็น ' + id);
+    await q('UPDATE carts SET name = ?, active = ? WHERE id = ?', [name, p.active !== false ? 1 : 0, id]);
+  }
+  return { id };
+}
+
+async function deleteCart(p) {
+  const id = str(p.id).trim().toUpperCase();
+  if (await one('SELECT id FROM cart_loans WHERE cart_id = ? AND returned_at IS NULL', [id])) fail('cart_busy', 'รถเข็นนี้ถูกยืมอยู่ ต้องคืนก่อนจึงลบได้');
+  const r = await q('DELETE FROM carts WHERE id = ?', [id]);
+  if (!r.affectedRows) fail('not_found', 'ไม่พบรถเข็น ' + id);
+  return {};
+}
+
+async function listCartLoans(p) {
+  const open = p.open ? ' WHERE returned_at IS NULL' : '';
+  return (await q('SELECT * FROM cart_loans' + open + ' ORDER BY borrowed_at DESC LIMIT 200')).map(loanOut);
+}
+
+async function forceReturn(p, who) {
+  const loan = await one('SELECT * FROM cart_loans WHERE id = ? AND returned_at IS NULL', [str(p.id)]);
+  if (!loan) fail('not_found', 'ไม่พบรายการยืมที่ยังไม่คืน');
+  await q('UPDATE cart_loans SET returned_at = UTC_TIMESTAMP(), returned_by = ? WHERE id = ?', [('admin:' + who.email).slice(0, 120), loan.id]);
   return {};
 }
 

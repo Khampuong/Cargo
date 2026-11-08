@@ -3,7 +3,7 @@
 <head>
 <base target="_top">
 <meta charset="utf-8">
-<title>Cargo Bot ขนส่งอุปกรณ์</title>
+<title>Cargo Bot · ระบบรถขนส่งอเนกประสงค์</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
@@ -15,16 +15,19 @@
     --p1:#2a6fdb; --p2:#d0457a; --p3:#1f8a4c; --p4:#d98a00; --p5:#7a52c7;
     --font:'IBM Plex Sans Thai','Noto Sans Thai',system-ui,sans-serif; --mono:'IBM Plex Mono',ui-monospace,monospace;
     --hero1:#0b5f7a; --hero2:#1585a6; --hero3:#2fb39a; --hero-fg:#ffffff; --hero-muted:rgba(255,255,255,.82);
+    --tint:#eef5f7; --box1:#d6ebf1; --box2:#ffffff;
   }
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
     --bg:#0f151c; --surface:#18212b; --line:#2a3644; --fg:#e4eaf1; --muted:#93a1b2; --chip:#223040;
     --accent:#3ab0d4; --accent-fg:#06222c; --ok:#3fbf73; --err:#ff7a7a;
     --p1:#6f9dff; --p2:#f07aa6; --p3:#4cc985; --p4:#f2b13f; --p5:#a98bf0; color-scheme:dark;
+    --tint:#14202a; --box1:#1c3a47; --box2:#18212b;
     --hero1:#0a3a4c; --hero2:#0f5670; --hero3:#17715f; } }
   :root[data-theme="dark"] {
     --bg:#0f151c; --surface:#18212b; --line:#2a3644; --fg:#e4eaf1; --muted:#93a1b2; --chip:#223040;
     --accent:#3ab0d4; --accent-fg:#06222c; --ok:#3fbf73; --err:#ff7a7a;
     --p1:#6f9dff; --p2:#f07aa6; --p3:#4cc985; --p4:#f2b13f; --p5:#a98bf0; color-scheme:dark;
+    --tint:#14202a; --box1:#1c3a47; --box2:#18212b;
     --hero1:#0a3a4c; --hero2:#0f5670; --hero3:#17715f; }
   * { box-sizing:border-box; }
   [hidden] { display:none !important; }
@@ -87,12 +90,12 @@
     box-shadow:0 1px 2px rgba(16,32,44,.04), 0 6px 18px rgba(16,32,44,.05); }
   .card h2 { font-size:.95rem; margin:0 0 10px; }
   .label { font-size:.8rem; color:var(--muted); margin-bottom:4px; }
-  input[type=text], input[type=email], input[type=number], input[type=password], select { width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--fg); font:inherit; }
+  input[type=text], input[type=email], input[type=tel], input[type=number], input[type=password], select { width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--fg); font:inherit; }
   input.need { border-color:var(--err); }
-  button.b, .btn { font:inherit; font-weight:600; border:1px solid var(--line); background:var(--chip); color:var(--fg); padding:10px 12px; border-radius:8px; cursor:pointer; text-align:center; display:inline-flex; justify-content:center; align-items:center; }
+  button.b, a.b, .btn { text-decoration:none; font:inherit; font-weight:600; border:1px solid var(--line); background:var(--chip); color:var(--fg); padding:10px 12px; border-radius:8px; cursor:pointer; text-align:center; display:inline-flex; justify-content:center; align-items:center; }
   button.primary, .btn.primary { background:var(--accent); color:var(--accent-fg); border-color:transparent; }
   button.danger { background:var(--err); color:#fff; border-color:transparent; }
-  button.sm { padding:5px 10px; font-size:.84rem; }
+  button.sm, a.b.sm { padding:5px 10px; font-size:.84rem; }
   button:disabled { opacity:.6; cursor:wait; }
   .row { display:flex; gap:8px; } .row > * { flex:1; min-width:0; }
   .col { display:flex; flex-direction:column; gap:12px; }
@@ -122,11 +125,32 @@
   .login p { margin:0; color:var(--muted); font-size:.88rem; }
   .login .err { color:var(--err); min-height:1.4em; }
   .gbtn { display:flex; justify-content:center; min-height:44px; }
+  button.b.cartbtn { background:var(--accent); color:var(--accent-fg); border-color:transparent; }
+  button.b.cartbtn.return, button.warn { background:#c27c0e; color:#fff; border-color:transparent; }
+  /* เมนูผู้ดูแลระบบ */
+  .amenu { display:flex; flex-wrap:wrap; gap:6px; padding:6px; border-radius:12px; background:var(--surface); border:1px solid var(--line);
+    position:sticky; top:8px; z-index:5; box-shadow:0 2px 10px rgba(16,32,44,.06); }
+  .amenu button { flex:1 1 auto; border:0; background:none; color:var(--muted); font:inherit; font-weight:600; padding:9px 14px; border-radius:8px; cursor:pointer; white-space:nowrap; }
+  .amenu button:hover { background:var(--chip); color:var(--fg); }
+  .amenu button[aria-current="true"] { background:var(--accent); color:var(--accent-fg); }
+  /* หน้ายืม/คืนรถเข็น (หน้าใหม่) */
+  body.cartmode .hero, body.cartmode .tabs, body.cartmode [id^="v-"] { display:none !important; }
+  .cartpage { width:100%; max-width:640px; margin:8px auto 0; padding:20px; }
+  .cphead { display:flex; align-items:center; gap:12px; padding-bottom:12px; border-bottom:1px solid var(--line); margin-bottom:4px; }
+  .cphead h2 { font-size:1.15rem; }
+  .cpcarts { display:grid; grid-template-columns:repeat(auto-fill, minmax(120px, 1fr)); gap:8px; }
+  .cploan, .cpdone { padding:10px 12px; border-radius:10px; background:var(--chip); border-left:4px solid #c27c0e; }
+  .cpneed { margin-top:8px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; color:var(--err); }
+  .cpdone { border-left-color:var(--ok); } .cpdone b { color:var(--ok); }
+  .cpdone.ret { border-left-color:#c27c0e; } .cpdone.ret b { color:#c27c0e; }
+  .who-hint { margin-top:6px; padding:8px 10px; border-radius:8px; background:var(--chip); font-size:.9rem; color:var(--muted); }
+  .who-hint.ok { color:var(--fg); border-left:3px solid var(--ok); }
+  .who-hint.ok b { color:var(--fg); }
+  .who-hint.err { color:var(--err); }
   .lhead { text-align:center; } .lhead h2 { margin:0; font-size:1.25rem; }
   .sso { display:flex; align-items:center; justify-content:center; gap:10px; width:100%; padding:10px 12px; border-radius:8px;
     border:1px solid var(--line); background:var(--surface); color:var(--fg); font:inherit; font-weight:600; text-decoration:none; cursor:pointer; }
   .sso:hover { background:var(--chip); }
-  .glogo { width:18px; height:18px; flex:none; display:inline-flex; } .glogo svg { width:100%; height:100%; }
   button.go { background:#2b2f36; color:#fff; border-color:transparent; padding:11px 12px; }
   button.go:hover { background:#1c1f24; }
   .or { display:flex; align-items:center; gap:10px; color:var(--muted); font-size:.82rem; }
@@ -150,8 +174,20 @@
   .msg { padding:14px; border-radius:10px; font-weight:600; text-align:center; }
   .msg.ok { background:var(--ok); color:#fff; } .msg.err { background:var(--err); color:#fff; }
   .msg small { display:block; font-weight:400; opacity:.92; }
-  .pic-res { display:grid; grid-template-columns:96px minmax(0,1fr); gap:12px; align-items:start; margin-top:10px; }
-  .pic-res img { width:96px; height:96px; object-fit:cover; border-radius:8px; border:1px solid var(--line); }
+  .pic-res { display:grid; grid-template-columns:auto auto minmax(0,1fr); gap:10px; align-items:start; margin-top:10px; }
+  .pic-res figure { margin:0; text-align:center; }
+  .pic-res figcaption { font-size:.72rem; color:var(--muted); margin-top:2px; }
+  .pic-res img { width:88px; height:88px; object-fit:cover; border-radius:8px; border:1px solid var(--line); display:block; }
+  @media (max-width:520px) { .pic-res { grid-template-columns:auto auto; } .pic-res > div { grid-column:1 / -1; } }
+  .simbar { height:6px; border-radius:99px; background:var(--chip); margin-top:8px; overflow:hidden; max-width:260px; }
+  .simbar span { display:block; height:100%; border-radius:99px; background:var(--ok); }
+  .simbar.lo span { background:var(--err); }
+  .refgrid { display:grid; grid-template-columns:repeat(auto-fill, minmax(96px, 1fr)); gap:8px; margin-top:10px; }
+  .refgrid figure { margin:0; position:relative; border:1px solid var(--line); border-radius:8px; overflow:hidden; background:var(--chip); }
+  .refgrid img { width:100%; aspect-ratio:1; object-fit:cover; display:block; }
+  .refgrid figcaption { font-size:.7rem; color:var(--muted); padding:3px 6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .refgrid .x { position:absolute; top:4px; right:4px; padding:2px 7px; font-size:.75rem; }
+  button.warnline { border-color:var(--err); color:var(--err); }
   .guess { font-size:1.2rem; font-weight:700; }
   .conf { display:inline-block; font-size:.78rem; font-weight:600; padding:2px 8px; border-radius:999px; background:var(--chip); }
   .conf.hi { color:var(--ok); } .conf.lo { color:var(--err); }
@@ -213,27 +249,18 @@
 <div class="login" id="loginView" hidden>
   <div class="card lcard">
     <div class="lhero">
-      <h1>Cargo Bot ขนส่งอุปกรณ์</h1>
-      <p>บันทึกการขนส่ง ติดตามเส้นทางรับ-ส่ง เก็บข้อมูลในฐานข้อมูล</p>
+      <h1>Cargo Bot</h1>
+      <p>ระบบรถขนส่งอเนกประสงค์</p>
       <div id="loginArt"></div>
     </div>
     <div class="lhead">
       <h2>เข้าสู่ระบบ</h2>
-      <p>ยินดีต้อนรับ! ใช้อีเมลที่ผู้ดูแลระบบลงทะเบียนไว้</p>
+      <p>ยินดีต้อนรับ! ใช้เบอร์โทรศัพท์หรืออีเมลที่ผู้ดูแลระบบลงทะเบียนไว้</p>
     </div>
-    <div id="gmBox" class="fields" hidden>
-      <button class="sso" type="button" id="gmBtn"><span class="glogo" aria-hidden="true"></span>ดำเนินการต่อในชื่อ&nbsp;<b id="gmEmail"></b></button>
-    </div>
-    <div id="gaBox" class="fields" hidden>
-      <a class="sso" id="gaLink" target="_top" rel="noopener"><span class="glogo" aria-hidden="true"></span>Continue with Google</a>
-    </div>
-    <div id="gBox" class="fields" hidden>
-      <div id="gBtn" class="gbtn"></div>
-    </div>
-    <div class="or" id="orLine" hidden>หรือ</div>
     <form class="fields" id="emailForm">
-      <div><label class="label" for="lEmail">Email address</label><input type="email" id="lEmail" autocomplete="email" autocapitalize="off" placeholder="name@gmail.com" required></div>
-      <div><label class="label" for="lPass">Password</label><input type="password" id="lPass" autocomplete="current-password" placeholder="ใส่รหัสผ่าน"></div>
+      <div><label class="label" for="lEmail">เบอร์โทรศัพท์ หรือ อีเมล</label><input type="text" id="lEmail" autocomplete="username" autocapitalize="off" spellcheck="false" placeholder="0812345678 หรือ name@gmail.com" required>
+        <div class="who-hint" id="lWho" aria-live="polite" hidden></div></div>
+      <div><label class="label" for="lPass">รหัสผ่าน / PIN</label><input type="password" id="lPass" autocomplete="current-password" placeholder="ใส่รหัสผ่าน"></div>
       <button class="b go" type="submit" id="lSend">Continue <span aria-hidden="true">▸</span></button>
     </form>
     <div class="note" id="lLoading">กำลังโหลด...</div>
@@ -245,19 +272,41 @@
   <header class="topbar">
     <div class="brand">
       <span class="logo" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 4h2"/><path d="M19 4v12H3"/><rect x="5" y="8" width="7" height="8" rx="1"/><circle cx="6" cy="19.5" r="1.6"/><circle cx="16" cy="19.5" r="1.6"/></svg></span>
-      <span>Cargo Bot<small>ขนส่งอุปกรณ์</small></span>
+      <span>Cargo Bot<small>ระบบรถขนส่งอเนกประสงค์</small></span>
     </div>
     <div class="who">
       <span class="chip" id="whoName">-</span><span class="chip admin" id="whoRole" hidden>ผู้ดูแลระบบ</span>
+      <button class="b sm cartbtn" type="button" id="cartBtn">ยืมรถเข็น</button>
       <button class="b sm" type="button" id="pwOpen">ตั้งรหัสผ่าน</button>
       <button class="b sm" type="button" id="logout">ออกจากระบบ</button>
     </div>
   </header>
+  <!-- ยืม / คืนรถเข็น (เข้าสู่ระบบแล้ว ไม่ต้องยืนยันตัวตนซ้ำ) -->
+  <section class="card fields cartpage" id="cartPanel" hidden>
+    <div class="cphead">
+      <button class="b sm" type="button" id="cpBack">← กลับ</button>
+      <h2 style="margin:0" id="cpTitle">ยืมรถเข็น</h2>
+    </div>
+    <div id="cpBorrow">
+      <p class="note" style="margin-bottom:8px">เลือกรถเข็นที่ว่าง</p>
+      <div class="cpcarts" id="cpCarts"></div>
+      <p class="note" id="cpNone" hidden>ตอนนี้ไม่มีรถเข็นว่าง</p>
+    </div>
+    <div id="cpReturn" hidden><div class="cploan"><b id="cpLoanCart">-</b><br><span class="note" id="cpLoanSince">-</span></div>
+      <p class="note cpneed" id="cpNeed" hidden>ต้อง<b>บันทึกขนส่ง</b>อย่างน้อย 1 รายการก่อน จึงจะคืนรถเข็นได้
+        <button class="b sm primary" type="button" id="cpGoRecord">ไปบันทึกขนส่ง</button></p></div>
+    <div id="cpDone" hidden class="cpdone"><b id="cpDoneTitle">-</b><br><span class="note" id="cpDoneSub">-</span></div>
+    <div class="row">
+      <button class="b" type="button" id="cpClose">กลับหน้าระบบ</button>
+      <button class="b primary" type="button" id="cpGo" disabled>ยืนยันการใช้</button>
+    </div>
+    <div class="status" id="cpStatus"></div>
+  </section>
   <form class="card fields" id="pwForm" hidden style="max-width:420px;align-self:flex-end;width:100%">
     <h2 style="margin:0">ตั้งรหัสผ่าน</h2>
-    <p class="note">ใช้เข้าระบบด้วยอีเมล + รหัสผ่าน (ยังเข้าด้วย Google ได้เหมือนเดิม)</p>
+    <p class="note">ใช้เข้าระบบด้วยเบอร์โทร/อีเมล + รหัสผ่าน และยืนยันตัวตนตอนยืม-คืนรถเข็น</p>
     <div><label class="label" for="pwOld">รหัสผ่านเดิม (ถ้าเคยตั้งไว้)</label><input type="password" id="pwOld" autocomplete="current-password"></div>
-    <div><label class="label" for="pwNew">รหัสผ่านใหม่ (อย่างน้อย 8 ตัว)</label><input type="password" id="pwNew" autocomplete="new-password" minlength="8" required></div>
+    <div><label class="label" for="pwNew">รหัสผ่านใหม่ (อย่างน้อย 6 ตัว หรือ PIN 6 หลัก)</label><input type="password" id="pwNew" autocomplete="new-password" minlength="6" required></div>
     <div><label class="label" for="pwNew2">ยืนยันรหัสผ่านใหม่</label><input type="password" id="pwNew2" autocomplete="new-password" required></div>
     <div class="row"><button class="b" type="button" id="pwCancel">ยกเลิก</button><button class="b primary" type="submit" id="pwSave">บันทึกรหัสผ่าน</button></div>
     <div class="status" id="pwStatus"></div>
@@ -267,13 +316,11 @@
   <section class="hero" aria-label="ภาพรวมวันนี้">
     <span class="clock" id="clock">--:--:--<small id="clockD"></small></span>
     <div class="hero-text">
-      <div class="hello">สวัสดี <span id="heroName">-</span></div>
-      <h1>ระบบบันทึกการขนส่งอุปกรณ์</h1>
+      <h1>Cargo Bot ระบบรถขนส่งอเนกประสงค์</h1>
       <p>บันทึกการขนส่ง ติดตามเส้นทางรับ-ส่ง และดูผลได้ในที่เดียว ข้อมูลทั้งหมดเก็บในฐานข้อมูล</p>
       <div class="hero-stats">
         <div><b id="hsQty">-</b><span>ชิ้นที่ขนวันนี้</span></div>
         <div><b id="hsTrips">-</b><span>เที่ยววันนี้</span></div>
-        <div><b id="hsJobs">-</b><span>งานที่ได้รับมอบหมาย</span></div>
       </div>
     </div>
     <div class="hero-art" id="heroArt" aria-hidden="true">
@@ -305,13 +352,13 @@
     </div>
   </section>
   <div class="tabs" role="tablist">
-    <button role="tab" data-v="scan" aria-selected="true">บันทึกอุปกรณ์</button>
+    <button role="tab" data-v="scan" aria-selected="true" id="tabScan">บันทึกขนส่ง</button>
     <button role="tab" data-v="dash" aria-selected="false">ผลการขนส่ง</button>
     <button role="tab" data-v="esp" aria-selected="false" id="tabEsp" hidden>เชื่อมต่อ ESP32</button>
     <button role="tab" data-v="admin" aria-selected="false" id="tabAdmin" hidden>ผู้ดูแลระบบ</button>
   </div>
 
-  <!-- บันทึกอุปกรณ์ -->
+  <!-- บันทึกขนส่ง -->
   <section id="v-scan" class="scan">
     <div class="col">
       <div class="card">
@@ -332,8 +379,11 @@
         <div class="status" id="picStatus">กำลังเตรียมระบบจดจำภาพ...</div>
         <label class="btn primary" style="width:100%;margin-top:6px">ถ่าย / อัปโหลดภาพอุปกรณ์<input type="file" id="picFile" accept="image/*" capture="environment" hidden></label>
         <div class="pic-res" id="picRes" hidden>
-          <img id="picImg" alt="ภาพที่ถ่าย">
-          <div><div class="guess" id="picGuess">-</div><span class="conf" id="picConf"></span><div class="chips" id="picChips"></div></div>
+          <figure><img id="picImg" alt="ภาพที่ถ่าย"><figcaption>ภาพของคุณ</figcaption></figure>
+          <figure id="picRefFig" hidden><img id="picRef" alt="ภาพอ้างอิงที่ใกล้เคียงที่สุด"><figcaption>ภาพอ้างอิง</figcaption></figure>
+          <div><div class="guess" id="picGuess">-</div><span class="conf" id="picConf"></span>
+            <div class="simbar" id="picBar" hidden><span id="picBarFill"></span></div>
+            <div class="chips" id="picChips"></div></div>
         </div>
         <div class="label" style="margin-top:12px">หรือเลือกด้วยมือ</div>
         <div class="quick" id="quick"></div>
@@ -433,28 +483,33 @@
 
   <!-- ผู้ดูแลระบบ -->
   <section id="v-admin" class="col" hidden>
-    <div class="card">
-      <div class="bar" style="margin-bottom:8px"><h2 style="margin:0">ยืนยันตัวตนด้วย Google</h2><span class="chip" id="gState">-</span></div>
-      <div id="gOff" class="fields" hidden>
-        <p class="note">ตอนนี้ใครรู้อีเมลที่ลงทะเบียนไว้ก็เข้าระบบได้ เปิด Google Sign-In เพื่อให้ Google ยืนยันว่าเป็นเจ้าของอีเมลจริง</p>
-        <ol class="steps">
-          <li>ไปที่ <a href="https://console.cloud.google.com/auth/clients" target="_blank" rel="noopener">Google Cloud Console › Clients</a> สร้าง Client ชนิด <b>Web application</b></li>
-          <li>ใส่ <b>Authorized JavaScript origins</b>: <code class="token" id="gOrigin" style="display:inline-block;padding:2px 8px">-</code>
-            <button class="b sm" type="button" id="gCopyOrigin">คัดลอก</button></li>
-          <li>ไปที่ <b>Audience</b> แล้วกด <b>Publish app</b> จากนั้นคัดลอก Client ID มาวางด้านล่าง (การตั้งค่า origin อาจใช้เวลาประมาณ 5 นาทีจึงจะมีผล)</li>
-        </ol>
-        <div><label class="label" for="gClient">Client ID</label><input type="text" id="gClient" placeholder="xxxx.apps.googleusercontent.com" autocomplete="off"></div>
-        <button class="b primary" type="button" id="gTest" style="max-width:320px">ทดสอบด้วยบัญชี Google ของฉัน</button>
-        <div id="gTestBox" hidden><p class="note">กดปุ่ม Google ด้านล่างแล้วเลือกบัญชี <b id="gMe">-</b> ถ้าผ่าน ระบบจะเปิดใช้ Google Sign-In ทันที</p><div id="gTestBtn" class="gbtn" style="justify-content:flex-start"></div></div>
-      </div>
-      <div id="gOn" class="fields" hidden>
-        <p class="note">เปิดใช้แล้ว ทุกคนต้องกดปุ่ม Google และใช้บัญชีที่ลงทะเบียนไว้ ส่วนการเข้าระบบด้วยการพิมพ์อีเมลอย่างเดียวถูกปิดแล้ว</p>
-        <div><div class="label">Client ID</div><div class="token" id="gCurrent">-</div></div>
-        <button class="b danger" type="button" id="gDisable" style="max-width:320px">ปิด Google Sign-In (กลับไปใช้อีเมลอย่างเดียว)</button>
-      </div>
-      <div class="status" id="gStatus"></div>
+    <!-- เมนูผู้ดูแลระบบ: คลิกเพื่อไปยังแต่ละฟังก์ชัน -->
+    <nav class="amenu" id="adminMenu" aria-label="เมนูผู้ดูแลระบบ">
+      <button type="button" data-go="moves">บันทึกการขนส่ง</button>
+      <button type="button" data-go="cart">รถเข็น</button>
+      <button type="button" data-go="products">อุปกรณ์</button>
+      <button type="button" data-go="places">สถานที่รับ-ส่ง</button>
+      <button type="button" data-go="users">บัญชีผู้ใช้งาน</button>
+    </nav>
+    <div class="card" data-sec="cart">
+      <div class="bar" style="margin-bottom:8px"><h2 style="margin:0">รถเข็น (ยืม-คืน)</h2>
+        <a class="b sm" href="cart" target="_blank" rel="noopener" style="text-decoration:none">เปิดหน้ายืม-คืน ↗</a></div>
+      <p class="note" style="margin-bottom:8px">พนักงานยืม-คืนที่หน้า <code>/cart</code> ด้วยเบอร์โทรที่ลงทะเบียนไว้ ติด QR <code>/cart?cart=รหัส</code> ที่รถแต่ละคันเพื่อเลือกคันนั้นให้เลย</p>
+      <form class="filters" id="cartForm">
+        <div><label class="label" for="cId">รหัส</label><input type="text" id="cId" placeholder="CART-04" autocomplete="off"></div>
+        <div class="grow"><label class="label" for="cName">ชื่อรถเข็น</label><input type="text" id="cName" placeholder="รถเข็น 4" autocomplete="off"></div>
+        <button class="b primary" type="submit" id="cAdd">+ เพิ่มรถเข็น</button>
+      </form>
+      <div class="status" id="cStatus"></div>
+      <div class="scroll"><table>
+        <thead><tr><th>รหัส</th><th>ชื่อ</th><th>สถานะ</th><th>ผู้ยืม</th><th>ยืมเมื่อ</th><th></th></tr></thead>
+        <tbody id="tCarts"></tbody></table></div>
+      <h2 style="margin:14px 0 8px">ประวัติการยืม-คืน</h2>
+      <div class="scroll"><table>
+        <thead><tr><th>รถเข็น</th><th>ผู้ยืม</th><th>เบอร์โทร</th><th>ยืม</th><th>คืน</th><th>นาที</th><th>ยืนยันด้วย</th><th>คืนโดย</th></tr></thead>
+        <tbody id="tLoans"></tbody></table></div>
     </div>
-    <div class="card">
+    <div class="card" data-sec="assign-removed" hidden>   <!-- ตัดฟังก์ชันมอบหมายงานออกแล้ว (เก็บไว้ให้โค้ดเดิมอ้างถึงได้) -->
       <div class="bar" style="margin-bottom:8px"><h2 style="margin:0">มอบหมายสถานที่รับ-ส่งให้พนักงาน</h2>
         <button class="b primary sm" type="button" id="aNew">+ มอบหมายงาน</button></div>
       <form class="box" id="aForm" hidden>
@@ -481,10 +536,10 @@
         <thead><tr><th>พนักงาน</th><th>สถานที่รับ</th><th>สถานที่ส่ง</th><th>หมายเหตุ</th><th>สถานะ</th><th class="num">ขนแล้ว</th><th>มอบหมายเมื่อ</th><th></th></tr></thead>
         <tbody id="tAssign"></tbody></table></div>
     </div>
-    <div class="card">
+    <div class="card" data-sec="places">
       <div class="bar" style="margin-bottom:8px"><h2 style="margin:0">สถานที่รับ / สถานที่ส่ง</h2>
         <button class="b primary sm" type="button" id="plNew">+ เพิ่มสถานที่</button></div>
-      <p class="note" style="margin-bottom:8px">รายการนี้จะขึ้นเป็นตัวเลือกให้พนักงานในช่องสถานที่รับ-ส่ง และในฟอร์มมอบหมายงาน</p>
+      <p class="note" style="margin-bottom:8px">รายการนี้จะขึ้นเป็นตัวเลือกให้พนักงานในช่องสถานที่รับ-ส่ง</p>
       <form class="box" id="plForm" hidden>
         <div class="label" id="plTitle">เพิ่มสถานที่</div>
         <div class="form-grid">
@@ -503,7 +558,7 @@
         <thead><tr><th>ชื่อสถานที่</th><th>ใช้เป็น</th><th>สถานะ</th><th>เพิ่มเมื่อ</th><th></th></tr></thead>
         <tbody id="tPlaces"></tbody></table></div>
     </div>
-    <div class="card">
+    <div class="card" data-sec="moves">
       <div class="bar" style="margin-bottom:8px"><h2 style="margin:0">บันทึกการขนส่งของพนักงาน</h2>
         <button class="b primary sm" type="button" id="mNew">+ เพิ่มรายการ</button></div>
       <form class="box" id="mForm" hidden>
@@ -535,19 +590,20 @@
         <tbody id="tMoves"></tbody></table></div>
     </div>
     <div class="col">
-      <div class="card">
+      <div class="card" data-sec="users">
         <div class="bar" style="margin-bottom:8px"><h2 style="margin:0">บัญชีผู้ใช้งาน</h2>
           <button class="b primary sm" type="button" id="uNew">+ เพิ่มบัญชี</button></div>
-        <p class="note" style="margin-bottom:8px">เจ้าของอีเมลเข้าระบบด้วย Google ได้เลย ถ้าต้องการให้เข้าด้วยอีเมล + รหัสผ่านด้วย ให้ตั้งรหัสผ่านให้ (หรือให้เขาตั้งเองที่ปุ่ม "ตั้งรหัสผ่าน")</p>
+        <p class="note" style="margin-bottom:8px">ใส่เบอร์โทรและตั้งรหัสผ่าน/PIN ให้พนักงาน เพื่อเข้าระบบด้วยเบอร์โทรหรืออีเมล (พนักงานเปลี่ยนเองได้ที่ปุ่ม "ตั้งรหัสผ่าน")</p>
         <form class="box" id="uForm" hidden>
           <div class="form-grid">
             <div><label class="label" for="uUser">อีเมล</label><input type="email" id="uUser" autocomplete="off" autocapitalize="off"></div>
             <div><label class="label" for="uName">ชื่อ-นามสกุล</label><input type="text" id="uName" autocomplete="off"></div>
+            <div><label class="label" for="uPhone">เบอร์โทรศัพท์ <span class="note">(10 หลัก ใช้เข้าสู่ระบบได้)</span></label><input type="tel" id="uPhone" inputmode="numeric" maxlength="10" pattern="0[0-9]{9}" title="เบอร์โทร 10 หลัก ขึ้นต้นด้วย 0" autocomplete="off" placeholder="0812345678"></div>
             <div><label class="label" for="uRole">สิทธิ์</label><select id="uRole"><option value="user">พนักงาน</option><option value="admin">ผู้ดูแลระบบ</option></select></div>
-            <div><label class="label" for="uPass">รหัสผ่าน <span class="note" id="uPassNote">(ไม่บังคับ อย่างน้อย 8 ตัว)</span></label><input type="password" id="uPass" autocomplete="new-password"></div>
+            <div id="uPassWrap"><label class="label" for="uPass">รหัสผ่านผู้ดูแลระบบ <span class="note" id="uPassNote">(อย่างน้อย 6 ตัว)</span></label><input type="password" id="uPass" autocomplete="new-password"></div>
           </div>
           <label class="check"><input type="checkbox" id="uActive" checked> เปิดใช้งานบัญชี</label>
-          <label class="check" id="uClearWrap" hidden><input type="checkbox" id="uClear"> ลบรหัสผ่าน (เข้าได้ด้วย Google เท่านั้น)</label>
+          <label class="check" id="uClearWrap" hidden><input type="checkbox" id="uClear"> ลบรหัสผ่าน (เข้าระบบไม่ได้จนกว่าจะตั้งใหม่)</label>
           <div class="row">
             <button class="b" type="button" id="uCancel">ยกเลิก</button>
             <button class="b primary" type="submit" id="uSave">บันทึกบัญชี</button>
@@ -555,10 +611,10 @@
           <div class="status" id="uStatus"></div>
         </form>
         <div class="scroll"><table>
-          <thead><tr><th>อีเมล</th><th>ชื่อ</th><th>สิทธิ์</th><th>สถานะ</th><th>รหัสผ่าน</th><th>เข้าระบบล่าสุด</th><th></th></tr></thead>
+          <thead><tr><th>อีเมล</th><th>ชื่อ</th><th>เบอร์โทร</th><th>สิทธิ์</th><th>สถานะ</th><th>รหัสผ่าน</th><th>เข้าระบบล่าสุด</th><th></th></tr></thead>
           <tbody id="tUsers"></tbody></table></div>
       </div>
-      <div class="card">
+      <div class="card" data-sec="products">
         <h2>อุปกรณ์ที่ขนส่ง</h2>
         <form class="box" id="prForm">
           <div class="form-grid">
@@ -570,8 +626,16 @@
           <div class="status" id="pStatus"></div>
         </form>
         <div class="scroll"><table>
-          <thead><tr><th>รหัส</th><th>ชื่อ</th><th>หน่วย</th><th>ใช้งาน</th><th></th></tr></thead>
+          <thead><tr><th>รหัส</th><th>ชื่อ</th><th>หน่วย</th><th>ใช้งาน</th><th>ภาพอ้างอิง</th><th></th></tr></thead>
           <tbody id="tProducts"></tbody></table></div>
+        <!-- ภาพอ้างอิงของอุปกรณ์: ระบบนำภาพที่พนักงานถ่ายมาเทียบกับภาพเหล่านี้ -->
+        <div class="box" id="refBox" hidden style="margin-top:12px">
+          <div class="bar"><b id="refTitle">ภาพอ้างอิง</b><button class="b sm" type="button" id="refClose">ปิด</button></div>
+          <p class="note" style="margin-top:4px">ใส่ภาพอุปกรณ์จริงหลายมุม (แนะนำ 5–10 ภาพ: ด้านหน้า ด้านข้าง มุมเฉียง ใกล้/ไกล แสงต่างกัน) ยิ่งหลากหลายระบบยิ่งจับภาพของพนักงานได้แม่น</p>
+          <label class="btn primary" style="margin-top:8px">+ เพิ่มภาพอ้างอิง (เลือกได้หลายภาพ)<input type="file" id="refFiles" accept="image/*" multiple hidden></label>
+          <div class="status" id="refStatus"></div>
+          <div class="refgrid" id="refGrid"></div>
+        </div>
       </div>
     </div>
   </section>
@@ -589,7 +653,6 @@ function setStatus(id, t, cls) { $(id).textContent = t; $(id).className = 'statu
 
 /* ---------- เรียกเซิร์ฟเวอร์ (Apps Script) ---------- */
 let session = store.get('cargo.session'), me = null;
-let LOGIN_TICKET = '<?= loginTicket ?>';   // ใส่โดย doGet เมื่อกลับมาจากแอปยืนยันตัวตน Google
 let PRODUCTS = [];
 const isAdmin = () => !!me && me.role === 'admin';
 function api(action, params) {
@@ -607,91 +670,140 @@ function api(action, params) {
       .rpc(action, params || {}, sent);
   });
 }
-// โลโก้ Google บนปุ่ม Continue with Google
-document.querySelectorAll('.glogo').forEach(el => { el.innerHTML = '<svg viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.6 5.4 2.6 13.3l7.9 6.2C12.4 13.6 17.7 9.5 24 9.5z"/><path fill="#4285F4" d="M46.1 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.4c-.5 2.9-2.2 5.3-4.6 6.9l7.4 5.7c4.3-4 6.9-9.9 6.9-17.1z"/><path fill="#FBBC05" d="M10.5 28.5c-.5-1.4-.8-2.9-.8-4.5s.3-3.1.8-4.5l-7.9-6.2C1 16.6 0 20.2 0 24s1 7.4 2.6 10.7l7.9-6.2z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.4-5.7c-2.1 1.4-4.8 2.3-8.5 2.3-6.3 0-11.6-4.1-13.5-9.8l-7.9 6.2C6.6 42.6 14.6 48 24 48z"/></svg>'; });
 function showOnly(id) { ['loginView', 'appView'].forEach(v => $(v).hidden = v !== id); }
 
 /* ---------- เข้าสู่ระบบด้วยอีเมล (อีเมลต้องลงทะเบียนในชีต Users) ---------- */
 function showLogin(msg) {
   session = null; me = null; store.set('cargo.session', null);
+  // เวอร์ชัน Node.js: เข้าสู่ระบบที่หน้าแรกหน้าเดียว (Cargo Bot · ระบบรถขนส่งอเนกประสงค์)
+  if (/\/app\/?$/.test(location.pathname)) { location.replace('./'); return; }
   showOnly('loginView'); $('lMsg').textContent = msg || '';
-  $('lEmail').value = store.get('cargo.email') || '';
-  loadGoogleButton();
+  $('lEmail').value = store.get('cargo.loginId') || store.get('cargo.email') || '';
+  showPhoneName();
+  loadLoginConfig();
 }
 $('emailForm').addEventListener('submit', async e => {
   e.preventDefault();
   $('lSend').disabled = true; $('lMsg').textContent = '';
   try {
-    const r = await api('emailLogin', { email: $('lEmail').value.trim(), password: $('lPass').value });
+    const id = $('lEmail').value.trim();
+    const r = await api('emailLogin', { email: id, password: $('lPass').value });
+    store.set('cargo.loginId', id);
     $('lPass').value = '';
     store.set('cargo.email', r.user.email);
     signedIn(r);
   } catch (err) { $('lMsg').textContent = err.message; }
   finally { $('lSend').disabled = false; }
 });
+/* พิมพ์เบอร์โทรครบ → แสดงชื่อพนักงานใต้ช่อง (ยืนยันว่าเป็นบัญชีของตัวเองก่อนใส่รหัสผ่าน) */
+let phoneTimer = null, phoneAsked = '';
+const phoneOf = s => { s = String(s || '').replace(/[\s\-().]/g, ''); if (/^\+?66\d{9}$/.test(s)) s = '0' + s.replace(/^\+?66/, ''); return /^0\d{9}$/.test(s) ? s : ''; };   // เบอร์ 10 หลัก
+function showPhoneName() {
+  clearTimeout(phoneTimer);
+  const box = $('lWho'), phone = phoneOf($('lEmail').value);
+  if (!phone) { box.hidden = true; phoneAsked = ''; return; }
+  if (phone === phoneAsked) return;
+  phoneTimer = setTimeout(async () => {
+    phoneAsked = phone;
+    box.hidden = false; box.className = 'who-hint'; box.textContent = 'กำลังค้นหา...';
+    try {
+      const r = await api('phoneName', { phone });
+      if (phoneOf($('lEmail').value) !== phone) return;
+      box.className = 'who-hint ok'; box.textContent = '';
+      const b = document.createElement('b'); b.textContent = r.name;
+      box.append('พนักงาน: ', b);
+    } catch (e) {
+      if (phoneOf($('lEmail').value) !== phone) return;
+      box.className = 'who-hint err'; box.textContent = e.message; phoneAsked = '';
+    }
+  }, 350);
+}
+$('lEmail').addEventListener('input', showPhoneName);
 function signedIn(r) {
   session = r.session; store.set('cargo.session', session); $('lMsg').textContent = '';
   start(r.user);
 }
 
-/* Google Sign-In: เมื่อผู้ดูแลเปิดใช้ (มี Client ID) หน้าเข้าสู่ระบบมีแค่ปุ่ม Google, ยังไม่เปิด = เข้าด้วยอีเมล */
-let gisReady = null;
-function loadGis() {
-  if (window.google && google.accounts && google.accounts.id) return Promise.resolve();
-  return gisReady || (gisReady = new Promise((res, rej) => {
-    const s = document.createElement('script'); s.src = 'https://accounts.google.com/gsi/client'; s.async = true;
-    s.onload = res; s.onerror = () => { gisReady = null; rej(new Error('โหลดปุ่ม Google ไม่ได้')); };
-    document.head.appendChild(s);
-  }));
-}
-async function loadGoogleButton() {
+/* ตั้งค่าหน้าเข้าสู่ระบบ: เบอร์โทร/อีเมล + รหัสผ่าน */
+async function loadLoginConfig() {
   let cfg;
   try { cfg = await api('authConfig'); } catch (e) { $('lLoading').textContent = 'เชื่อมต่อระบบไม่ได้ กรุณาลองใหม่'; return; }
   $('lLoading').hidden = true;
-  $('gaBox').hidden = !cfg.loginAppUrl; if (cfg.loginAppUrl) $('gaLink').href = cfg.loginAppUrl;
-  // กลับมาจากแอปยืนยันตัวตนของ Google พร้อม ticket → เข้าระบบให้เอง (ใช้ได้ครั้งเดียว)
-  if (LOGIN_TICKET) {
-    const t = LOGIN_TICKET; LOGIN_TICKET = '';
-    $('lMsg').textContent = 'กำลังเข้าสู่ระบบ...';
-    try { store.set('cargo.noAutoGmail', null); signedIn(await api('ticketLogin', { ticket: t })); return; }
-    catch (err) { $('lMsg').textContent = err.message; }
-  }
-  // ฟอร์มอีเมล + รหัสผ่านแสดงเสมอ (ยังไม่เปิดการยืนยันด้วย Google = ไม่ใส่รหัสผ่านก็ได้)
   $('lPass').required = !cfg.emailLogin;
-  $('lPass').placeholder = cfg.emailLogin ? 'ไม่ต้องใส่ ถ้ายังไม่ได้ตั้งรหัสผ่าน' : 'ใส่รหัสผ่าน';
-  $('gBox').hidden = !cfg.googleClientId;
-  $('orLine').hidden = !(cfg.loginAppUrl || cfg.gmail || cfg.googleClientId);
-  // มีบัญชี Gmail เปิดอยู่ (Google ยืนยันให้แล้ว) → เข้าให้เองทันที ไม่ต้องพิมพ์อีเมล ไม่ต้องกดปุ่ม
-  $('gmBox').hidden = !cfg.gmail; $('gmEmail').textContent = cfg.gmail || '';
-  if (cfg.gmail && !store.get('cargo.noAutoGmail') && await gmailLogin()) return;
-  if (!cfg.googleClientId) return;
+  $('lPass').placeholder = cfg.emailLogin ? 'ไม่ต้องใส่ ถ้ายังไม่ได้ตั้งรหัสผ่าน' : 'ใส่รหัสผ่าน / PIN';
+}
+/* ---------- ปุ่มยืม / คืนรถเข็น ----------
+   ยังไม่ได้ยืม → "ยืมรถเข็น" (เลือกคันที่ว่าง) / ยืมอยู่ → ปุ่มเปลี่ยนเป็น "คืนรถเข็น" และพาไปหน้าคืนเลย */
+let myLoan = null, cpCart = '', cpCarts = [];
+async function refreshCartBtn() {
   try {
-    await renderGoogleButton($('gBtn'), cfg.googleClientId, async credential => {
-      $('lMsg').textContent = 'กำลังตรวจสอบบัญชี Google...';
-      try { signedIn(await api('googleLogin', { credential })); } catch (err) { $('lMsg').textContent = err.message; }
-    }, true);
-  } catch (e) { $('lMsg').textContent = e.message + ' กรุณาลองโหลดหน้าใหม่'; }
+    const r = await api('myCart');
+    myLoan = r.loan; cpCarts = r.carts;
+    $('cartBtn').textContent = myLoan ? 'คืนรถเข็น (' + myLoan.cartName + ')' : 'ยืมรถเข็น';
+    $('cartBtn').classList.toggle('return', !!myLoan);
+  } catch (e) { /* ปุ่มยังใช้ได้ กดแล้วโหลดใหม่ */ }
 }
-async function gmailLogin() {
-  $('gmBtn').disabled = true; $('lMsg').textContent = '';
-  try { store.set('cargo.noAutoGmail', null); signedIn(await api('gmailLogin')); return true; }
-  catch (err) { $('lMsg').textContent = err.message; return false; }
-  finally { $('gmBtn').disabled = false; }
+function renderCartPanel() {
+  const ret = !!myLoan;
+  $('cpTitle').textContent = ret ? 'คืนรถเข็น' : 'ยืมรถเข็น';
+  $('cpBorrow').hidden = ret; $('cpReturn').hidden = !ret; $('cpDone').hidden = true; $('cpGo').hidden = false;
+  $('cpGo').textContent = ret ? 'ยืนยันการคืน' : 'ยืนยันการใช้';
+  $('cpGo').className = 'b ' + (ret ? 'warn' : 'primary');
+  setStatus('cpStatus', '');
+  if (ret) {
+    $('cpLoanCart').textContent = 'คุณยืม ' + myLoan.cartName + ' (' + myLoan.cartId + ') อยู่';
+    $('cpLoanSince').textContent = 'ตั้งแต่ ' + myLoan.borrowedAt + ' · ' + myLoan.minutes + ' นาที · บันทึกขนส่งแล้ว ' + (myLoan.moves || 0) + ' รายการ';
+    $('cpNeed').hidden = myLoan.moves > 0;
+    $('cpGo').disabled = !(myLoan.moves > 0);   // บันทึกขนส่งเสร็จก่อน จึงคืนได้
+  } else {
+    const box = $('cpCarts'); box.textContent = '';
+    if (!cpCarts.some(c => c.id === cpCart)) cpCart = cpCarts.length === 1 ? cpCarts[0].id : '';
+    cpCarts.forEach(c => {
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'achip'; b.dataset.id = c.id;
+      const t = document.createElement('b'); t.textContent = c.name; const s = document.createElement('small'); s.textContent = c.id;
+      b.append(t, s); b.onclick = () => { cpCart = c.id; markCp(); }; box.appendChild(b);
+    });
+    $('cpNone').hidden = cpCarts.length > 0;
+    markCp();
+  }
 }
-$('gmBtn').onclick = () => gmailLogin();
-/* autoPrompt = แสดง One Tap ทันที: คนที่เคยเลือกบัญชีแล้วจะเข้าระบบเองโดยไม่ต้องกดหรือพิมพ์อีเมล
-   (หลังกดออกจากระบบ Google จะไม่เข้าให้อัตโนมัติจนกว่าจะเลือกบัญชีเองอีกครั้ง) ถ้า One Tap ใช้ไม่ได้ ยังมีปุ่ม Google */
-async function renderGoogleButton(el, clientId, onCredential, autoPrompt) {
-  await loadGis();
-  google.accounts.id.initialize({
-    client_id: clientId, callback: resp => onCredential(resp.credential),
-    auto_select: !!autoPrompt, cancel_on_tap_outside: false, itp_support: true, use_fedcm_for_prompt: true
-  });
-  el.textContent = '';
-  google.accounts.id.renderButton(el, { theme: 'outline', size: 'large', text: 'signin_with', locale: 'th', width: 300 });
-  if (autoPrompt) try { google.accounts.id.prompt(); } catch (e) { /* ใช้ปุ่มแทน */ }
+function markCp() {
+  document.querySelectorAll('#cpCarts .achip').forEach(b => b.setAttribute('aria-pressed', b.dataset.id === cpCart));
+  if (!myLoan) $('cpGo').disabled = !cpCart;
 }
-$('pwOpen').onclick = () => { $('pwForm').hidden = !$('pwForm').hidden; setStatus('pwStatus', ''); if (!$('pwForm').hidden) $('pwNew').focus(); };
+/* หน้ายืม/คืนรถเข็น: แสดงเป็นหน้าใหม่ (#cart) ซ่อนแบนเนอร์ แท็บ และเนื้อหาอื่น / ปุ่มย้อนกลับของเบราว์เซอร์ใช้ได้ */
+async function openCartPage(push) {
+  $('pwForm').hidden = true;
+  document.body.classList.add('cartmode'); $('cartPanel').hidden = false;
+  if (push !== false && location.hash !== '#cart') history.pushState({ cart: 1 }, '', '#cart');
+  window.scrollTo(0, 0);
+  await refreshCartBtn(); renderCartPanel();
+}
+function closeCartPage(fromPop) {
+  document.body.classList.remove('cartmode'); $('cartPanel').hidden = true;
+  if (!fromPop && location.hash === '#cart') history.back();
+}
+window.addEventListener('popstate', () => { if (location.hash === '#cart') { if (me && !isAdmin()) openCartPage(false); } else closeCartPage(true); });
+$('cartBtn').onclick = () => document.body.classList.contains('cartmode') ? closeCartPage() : openCartPage();
+$('cpBack').onclick = () => closeCartPage();
+$('cpClose').onclick = () => closeCartPage();
+$('cpGoRecord').onclick = () => { closeCartPage(); showView('scan'); window.scrollTo({ top: $('v-scan').offsetTop - 10, behavior: 'smooth' }); };
+$('cpGo').onclick = async () => {
+  const ret = !!myLoan; $('cpGo').disabled = true; setStatus('cpStatus', ret ? 'กำลังบันทึกการคืน...' : 'กำลังบันทึกการยืม...');
+  try {
+    const r = ret ? await api('returnMyCart') : await api('borrowMyCart', { cartId: cpCart });
+    const l = r.loan;
+    $('cpBorrow').hidden = true; $('cpReturn').hidden = true; $('cpDone').hidden = false; $('cpGo').hidden = true;
+    $('cpDone').className = 'cpdone' + (ret ? ' ret' : '');
+    $('cpDoneTitle').textContent = ret ? '✓ ยืนยันการคืนรถเข็นแล้ว' : '✓ ยืนยันการใช้รถเข็นแล้ว';
+    $('cpDoneSub').textContent = l.cartName + ' (' + l.cartId + ') · ยืม ' + l.borrowedAt + (ret ? ' · คืน ' + l.returnedAt + ' · ' + l.minutes + ' นาที' : '') + ' · เลขที่ ' + l.id;
+    setStatus('cpStatus', '');
+    await refreshCartBtn();
+  } catch (err) { setStatus('cpStatus', err.message, 'err'); $('cpGo').disabled = false; await refreshCartBtn(); }
+};
+
+$('pwOpen').onclick = () => {
+  if (document.body.classList.contains('cartmode')) closeCartPage(); $('pwForm').hidden = !$('pwForm').hidden; setStatus('pwStatus', ''); if (!$('pwForm').hidden) $('pwNew').focus(); };
 $('pwCancel').onclick = () => { $('pwForm').hidden = true; $('pwForm').reset(); };
 $('pwForm').addEventListener('submit', async e => {
   e.preventDefault();
@@ -706,8 +818,6 @@ $('pwForm').addEventListener('submit', async e => {
 $('logout').onclick = () => {
   $('pwForm').hidden = true; $('pwForm').reset();
   api('logout').catch(() => {});
-  try { google.accounts.id.disableAutoSelect(); } catch (e) {}
-  store.set('cargo.noAutoGmail', '1');   // ออกจากระบบแล้วไม่เข้าเองด้วย Gmail จนกว่าจะกดปุ่ม
   showLogin();
 };
 
@@ -716,21 +826,28 @@ async function start(user) {
   me = user;
   showOnly('appView');
   $('whoName').textContent = user.name; $('whoRole').hidden = !isAdmin();   // พนักงานไม่ต้องแสดงสิทธิ์
-  $('heroName').textContent = user.name; loadHeroStats();
+  loadHeroStats();   // ชื่อผู้ใช้แสดงที่แถบบนอย่างเดียว
   $('tabAdmin').hidden = !isAdmin(); $('tabEsp').hidden = !isAdmin();   // Token ระบบ: เฉพาะผู้ดูแล
+  $('pwOpen').hidden = true; $('pwForm').hidden = true;   // ไม่มีปุ่มตั้งรหัสผ่านในแถบบน (ผู้ดูแลเปลี่ยนรหัสได้ที่ บัญชีผู้ใช้งาน > แก้ไข)
+  $('cartBtn').hidden = isAdmin();                        // ปุ่มยืม/คืนรถเข็น เฉพาะพนักงาน
   if (lastUser && lastUser !== user.email) resetSession();
   lastUser = user.email;
   $('mover').value = store.get('cargo.mover.' + user.email) || user.name;
   $('pickup').value = ''; $('dropoff').value = '';
   store.set('cargo.pickup', null); store.set('cargo.dropoff', null);   // ล้างค่าที่เวอร์ชันก่อนเคยจำไว้
-  if (view === 'admin' && !isAdmin()) showView('scan'); else showView(view);
+  // ผู้ดูแลระบบไม่มีหน้าบันทึกขนส่ง (หน้าแรกของผู้ดูแล = ผู้ดูแลระบบ) / พนักงานไม่มีหน้าผู้ดูแล
+  $('tabScan').hidden = isAdmin();
+  if (isAdmin()) showView(view === 'scan' ? 'admin' : view); else showView(view === 'admin' || view === 'esp' ? 'scan' : view);
   try { await loadProducts(); } catch (e) { message('err', 'โหลดรายการอุปกรณ์ไม่ได้', e.message); }
   loadPlaces();
   selectedAssign = null; loadAssignments();
+  closeCartPage(true);
+  if (!isAdmin()) { refreshCartBtn(); if (location.hash === '#cart') openCartPage(false); }   // เปิดลิงก์ #cart ตรง ๆ (พนักงาน)
+  else if (location.hash === '#cart') history.replaceState(null, '', location.pathname);
   if (!started) { started = true; initVision(); }
 }
 (async function boot() {
-  if (session && !LOGIN_TICKET) { try { const r = await api('me'); start(r.user); return; } catch (e) { if (e.code === 'unauthorized') return; } }
+  if (session) { try { const r = await api('me'); start(r.user); return; } catch (e) { if (e.code === 'unauthorized') return; } }
   showLogin();
 })();
 
@@ -771,7 +888,7 @@ function renderQuick() {
   });
 }
 
-/* ---------- บันทึกอุปกรณ์ ---------- */
+/* ---------- บันทึกขนส่ง ---------- */
 let current = null, sQty = 0, sTrips = 0, audio = null, method = 'เลือกเอง', score = null, photoImg = null;
 function beep(f, ms) { try { audio = audio || new (window.AudioContext || window.webkitAudioContext)();
   const o = audio.createOscillator(), g = audio.createGain(); g.gain.value = .08; o.frequency.value = f;
@@ -785,7 +902,7 @@ function select(prod, how, sc) {
   method = how; score = sc; current = prod;
   $('pName').textContent = prod.name; $('pCode').textContent = 'รหัส ' + prod.code + ' · หน่วย: ' + prod.unit;
   $('pRoute').textContent = 'เส้นทาง: ' + routeText();
-  $('teachRow').hidden = !(how === 'ภาพถ่าย' && photoImg);
+  $('teachRow').hidden = !(how === 'ภาพถ่าย' && photoImg && isAdmin());   // ภาพอ้างอิงมาจากผู้ดูแลเท่านั้น
   $('qty').value = 1; $('msg').hidden = true; $('pCard').hidden = false;
 }
 ['pickup', 'dropoff'].forEach(id => $(id).addEventListener('input', () => {
@@ -807,7 +924,7 @@ $('loginArt').appendChild($('heroArt').querySelector('svg').cloneNode(true));   
 /* งานที่ผู้ดูแลมอบหมาย: กดเพื่อกรอกสถานที่รับ-ส่งให้ */
 let myAssigns = [], selectedAssign = null;
 async function loadAssignments() {
-  try { myAssigns = (await api('myAssignments')).assignments; } catch (e) { myAssigns = []; }
+  myAssigns = [];   // ตัดฟังก์ชันมอบหมายงานออกแล้ว
   if (!myAssigns.some(a => a.id === selectedAssign)) selectedAssign = null;
   const box = $('assignList'); box.textContent = '';
   myAssigns.forEach(a => {
@@ -819,7 +936,7 @@ async function loadAssignments() {
     box.appendChild(b);
   });
   $('assignBox').hidden = !myAssigns.length;
-  $('hsJobs').textContent = myAssigns.length;
+  if ($('hsJobs')) $('hsJobs').textContent = myAssigns.length;
   selectAssign(myAssigns.find(a => a.id === selectedAssign) || null);
 }
 function selectAssign(a) {
@@ -844,11 +961,11 @@ $('save').onclick = async () => {
   const missing = [['mover', mover], ['pickup', pickup], ['dropoff', dropoff]].filter(x => !x[1]).map(x => x[0]);
   if (missing.length) { missing.forEach(id => $(id).classList.add('need')); $(missing[0]).focus();
     message('err', 'กรุณากรอกข้อมูลการขนส่งให้ครบ', 'ชื่อผู้ขนส่ง สถานที่รับ และสถานที่ส่ง'); beep(220, 300); return; }
-  const teach = method === 'ภาพถ่าย' && photoImg && $('teach').checked, img = photoImg, prod = current;
+  const teach = isAdmin() && method === 'ภาพถ่าย' && photoImg && $('teach').checked, img = photoImg, prod = current;
   $('save').disabled = true; $('save').textContent = 'กำลังบันทึก...';
   try {
     const r = await api('saveMove', { code: prod.code, qty: $('qty').value, mover, pickup, dropoff, method, score, photo: img ? shrink(img, 800) : '', reqId: newId(), assignId: selectedAssign || '' });
-    selectAssign(null); loadHeroStats();
+    selectAssign(null); loadHeroStats(); refreshCartBtn();   // บันทึกแล้ว → คืนรถเข็นได้
     store.set('cargo.mover.' + me.email, mover);   // จำเฉพาะชื่อผู้ขนส่ง
     $('pickup').value = ''; $('dropoff').value = '';   // สถานที่รับ-ส่งต้องกรอกใหม่ทุกครั้ง
     if (teach) addRef(prod.code, img).catch(() => {});
@@ -931,7 +1048,7 @@ function shrink(img, max) { const w = img.naturalWidth, h = img.naturalHeight, s
 async function addRef(code, img, by) {
   const p = PRODUCTS.find(x => x.code === code), vec = await CargoVision.embed(img);
   const r = await api('addRef', { code, vec: CargoVision.vecToB64(vec), thumb: shrink(img, 160), addedBy: by || me.name });
-  REFS.push({ id: r.id, code, name: p ? p.name : code, vec });
+  REFS.push({ id: r.id, code, name: p ? p.name : code, vec, thumb: shrink(img, 160), addedBy: by || me.name });
 }
 
 /* ไฟล์น้ำหนัก ~6 MB โหลดจาก Google Drive ผ่านเซิร์ฟเวอร์ แล้วเก็บไว้ในเครื่อง (IndexedDB) ครั้งต่อไปไม่ต้องโหลดใหม่ */
@@ -956,25 +1073,30 @@ async function initVision() {
     const [buf, refs] = await Promise.all([loadModelBuffer(), api('refs')]);
     await CargoVision.load(window.CARGO_GRAPH, buf);
     REFS.length = 0;
-    refs.refs.forEach(r => REFS.push({ id: r.id, code: r.code, name: r.name, vec: CargoVision.b64ToVec(r.vec) }));
-    if (!REFS.length)   // ฐานข้อมูลยังว่าง: ใช้ภาพเริ่มต้นโต๊ะ/เก้าอี้
+    refs.refs.forEach(r => REFS.push({ id: r.id, code: r.code, name: r.name, vec: CargoVision.b64ToVec(r.vec), thumb: r.thumb, addedBy: r.addedBy }));
+    if (!REFS.length && isAdmin())   // ฐานข้อมูลยังว่าง: ผู้ดูแลเริ่มด้วยภาพตัวอย่างโต๊ะ/เก้าอี้
       for (const code of ['TABLE', 'CHAIR']) if (PRODUCTS.some(p => p.code === code)) await addRef(code, await loadImg(SEED_IMGS[code]), 'ภาพเริ่มต้น');
-    picStatus('ถ่ายภาพเพื่อให้ระบบระบุอุปกรณ์ หรือเลือกด้วยมือด้านล่าง', true);
+    picStatus(REFS.length ? 'ถ่ายภาพเพื่อให้ระบบระบุอุปกรณ์ หรือเลือกด้วยมือด้านล่าง' : 'ยังไม่มีภาพอ้างอิงจากผู้ดูแล กรุณาเลือกอุปกรณ์ด้วยมือ', !!REFS.length);
+    if (isAdmin() && view === 'admin') renderAdmin();   // อัปเดตจำนวนภาพอ้างอิงในตารางอุปกรณ์
+    if (refProduct) drawRefs();
   } catch (e) {
     if (e.code === 'unauthorized') { started = false; if (me) { started = true; initVision(); } return; }   // ออกจากระบบระหว่างโหลด: เริ่มใหม่กับบัญชีปัจจุบัน
     picStatus('ระบบจดจำภาพใช้ไม่ได้ตอนนี้ (' + e.message + ') กรุณาเลือกอุปกรณ์ด้วยมือ');
   }
 }
 async function recognizeImg(img) {
-  if (!CargoVision.ready || !REFS.length) { message('err', 'ระบบจดจำภาพยังไม่พร้อม', 'กรุณาเลือกอุปกรณ์ด้วยมือ'); return; }
+  if (!CargoVision.ready || !REFS.length) { message('err', REFS.length ? 'ระบบจดจำภาพยังไม่พร้อม' : 'ยังไม่มีภาพอ้างอิง', REFS.length ? 'กรุณาเลือกอุปกรณ์ด้วยมือ' : 'ผู้ดูแลระบบต้องเพิ่มภาพอ้างอิงของอุปกรณ์ก่อน กรุณาเลือกด้วยมือ'); return; }
   photoImg = img; $('picImg').src = img.src; $('picRes').hidden = false; $('pCard').hidden = true;
   $('picGuess').textContent = 'กำลังวิเคราะห์ภาพ...'; $('picConf').textContent = ''; $('picChips').textContent = '';
   await new Promise(r => setTimeout(r, 30));
   const r = CargoVision.match(await CargoVision.embed(img), REFS);
-  const pct = x => Math.round(x * 100) + '%';
+  const pct = x => Math.max(0, Math.round(x * 100)) + '%';
   $('picGuess').textContent = r.confident ? r.top.name : 'ไม่แน่ใจ อาจเป็น ' + r.top.name;
-  $('picConf').textContent = 'ความคล้าย ' + pct(r.top.score) + (r.confident ? ' · มั่นใจ' : ' · กรุณาเลือกให้ถูก');
+  $('picConf').textContent = 'ความเหมือน ' + pct(r.top.score) + ' (เทียบภาพผู้ดูแล ' + r.top.refs + ' ภาพ)' + (r.confident ? ' · มั่นใจ' : ' · กรุณาเลือกให้ถูก');
   $('picConf').className = 'conf ' + (r.confident ? 'hi' : 'lo');
+  $('picBar').hidden = false; $('picBar').className = 'simbar' + (r.confident ? '' : ' lo');
+  $('picBarFill').style.width = Math.max(0, Math.min(100, Math.round(r.top.score * 100))) + '%';
+  $('picRefFig').hidden = !r.top.thumb; if (r.top.thumb) $('picRef').src = r.top.thumb;
   const sc = {}; r.ranked.forEach(x => sc[x.code] = x.score);
   PRODUCTS.slice().sort((a, b) => (sc[b.code] || 0) - (sc[a.code] || 0)).forEach(p => {
     const b = document.createElement('button'); b.type = 'button'; b.className = 'b'; b.textContent = p.name;
@@ -1081,10 +1203,59 @@ function delBtn(onConfirm) {
 const ROLE_TH = { user: 'พนักงาน', admin: 'ผู้ดูแลระบบ' };
 const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 
+/* ---------- เมนูผู้ดูแลระบบ: แสดงทีละฟังก์ชัน (จำหน้าล่าสุดไว้) ---------- */
+let adminSec = store.get('cargo.adminSec') || 'moves';
+function showAdminSec(key) {
+  if (!document.querySelector('#v-admin [data-sec="' + key + '"]')) key = 'moves';
+  adminSec = key; store.set('cargo.adminSec', key);
+  document.querySelectorAll('#v-admin [data-sec]').forEach(c => c.hidden = c.dataset.sec !== key);
+  document.querySelectorAll('#adminMenu button').forEach(b => b.setAttribute('aria-current', b.dataset.go === key));
+}
+document.querySelectorAll('#adminMenu button').forEach(b => b.onclick = () => { showAdminSec(b.dataset.go); window.scrollTo({ top: $('v-admin').offsetTop - 8, behavior: 'smooth' }); });
+showAdminSec(adminSec);
+
+/* ---------- รถเข็น (ผู้ดูแล) ---------- */
+async function loadCartsAdmin() {
+  try {
+    const [c, l] = await Promise.all([api('carts'), api('cartLoans')]);
+    fill('tCarts', c.carts.map(x => tr => {
+      cell(tr, x.id); cell(tr, x.name);
+      cell(tr, !x.active ? 'ปิดใช้งาน' : x.loan ? 'ถูกยืม' : 'ว่าง').style.color = !x.active ? 'var(--muted)' : x.loan ? 'var(--err)' : 'var(--ok)';
+      cell(tr, x.loan ? x.loan.name + (x.loan.phone ? ' · ' + x.loan.phone : '') : '-'); cell(tr, x.loan ? x.loan.borrowedAt : '-');
+      const acts = document.createElement('div'); acts.className = 'acts';
+      if (x.loan) acts.appendChild(btn('บันทึกคืน', async () => {
+        try { await api('forceReturn', { id: x.loan.id }); setStatus('cStatus', 'บันทึกคืน ' + x.name + ' แล้ว', 'ok'); loadCartsAdmin(); }
+        catch (err) { setStatus('cStatus', err.message, 'err'); }
+      }));
+      acts.appendChild(btn(x.active ? 'ปิด' : 'เปิด', async () => {
+        try { await api('saveCart', { id: x.id, name: x.name, active: !x.active }); loadCartsAdmin(); } catch (err) { setStatus('cStatus', err.message, 'err'); }
+      }));
+      if (!x.loan) acts.appendChild(delBtn(async () => {
+        try { await api('deleteCart', { id: x.id }); setStatus('cStatus', 'ลบ ' + x.name + ' แล้ว', 'ok'); loadCartsAdmin(); }
+        catch (err) { setStatus('cStatus', err.message, 'err'); }
+      }));
+      cell(tr, '').appendChild(acts);
+    }), 6, 'ยังไม่มีรถเข็น');
+    fill('tLoans', l.loans.map(x => tr => {
+      cell(tr, x.cartName + ' (' + x.cartId + ')'); cell(tr, x.name); cell(tr, x.phone || '-'); cell(tr, x.borrowedAt);
+      cell(tr, x.returnedAt || 'ยังไม่คืน'); cell(tr, String(x.minutes)); cell(tr, { pin: 'PIN', confirm: 'ติ๊กยืนยันชื่อ', login: 'เข้าสู่ระบบแล้ว' }[x.verifiedBy] || x.verifiedBy);
+      cell(tr, !x.returnedAt ? '-' : x.returnedBy === 'self' ? 'ผู้ยืม' : x.returnedBy.replace('admin:', 'ผู้ดูแล '));
+    }), 8, 'ยังไม่มีการยืม');
+  } catch (err) { setStatus('cStatus', err.message, 'err'); }
+}
+$('cartForm').addEventListener('submit', async e => {
+  e.preventDefault(); $('cAdd').disabled = true;
+  try {
+    await api('saveCart', { isNew: true, id: $('cId').value, name: $('cName').value });
+    setStatus('cStatus', 'เพิ่มรถเข็น ' + $('cId').value.toUpperCase() + ' แล้ว', 'ok'); $('cId').value = ''; $('cName').value = ''; loadCartsAdmin();
+  } catch (err) { setStatus('cStatus', err.message, 'err'); }
+  finally { $('cAdd').disabled = false; }
+});
+
 async function renderAdmin() {
   if (!isAdmin()) return;
   if (!$('fFrom').value) { $('fFrom').value = ymd(new Date(Date.now() - 6 * 86400000)); $('fTo').value = ymd(new Date()); }
-  loadMoves(); loadAssignAdmin(); loadPlacesAdmin(); loadGoogleSettings();
+  loadMoves(); loadPlacesAdmin(); loadCartsAdmin();
   try {
     const [u, p] = await Promise.all([api('users'), api('allProducts')]);
     const ml = $('moverList'); ml.textContent = '';
@@ -1093,8 +1264,8 @@ async function renderAdmin() {
     u.users.filter(x => x.active).forEach(x => { const o = document.createElement('option'); o.value = x.email; o.textContent = x.name + ' (' + x.email + ')'; sel.appendChild(o); });
     if (cur) sel.value = cur;
     fill('tUsers', u.users.map(x => tr => {
-      cell(tr, x.email); cell(tr, x.name); cell(tr, ROLE_TH[x.role] + (x.fixed ? ' (ถาวร)' : ''));
-      onOff(tr, x.active, 'ใช้งาน', 'ปิด'); cell(tr, x.hasPassword ? 'ตั้งแล้ว' : 'Google เท่านั้น'); cell(tr, x.lastLogin || '-');
+      cell(tr, x.email); cell(tr, x.name); cell(tr, x.phone || '-'); cell(tr, ROLE_TH[x.role] + (x.fixed ? ' (ถาวร)' : ''));
+      onOff(tr, x.active, 'ใช้งาน', 'ปิด'); cell(tr, x.role !== 'admin' ? '-' : x.hasPassword ? 'ตั้งแล้ว' : 'ยังไม่ตั้ง'); cell(tr, x.lastLogin || '-');
       const acts = document.createElement('div'); acts.className = 'acts';
       acts.appendChild(btn('แก้ไข', () => openUser(x)));
       if (!x.fixed && x.email !== me.email) acts.appendChild(delBtn(async () => {
@@ -1108,55 +1279,66 @@ async function renderAdmin() {
       const name = document.createElement('input'); name.type = 'text'; name.value = x.name; name.setAttribute('aria-label', 'ชื่อ ' + x.code); cell(tr, '').appendChild(name);
       const unit = document.createElement('input'); unit.type = 'text'; unit.value = x.unit; unit.setAttribute('aria-label', 'หน่วย ' + x.code); cell(tr, '').appendChild(unit);
       const on = document.createElement('input'); on.type = 'checkbox'; on.checked = x.active; on.setAttribute('aria-label', 'ใช้งาน ' + x.code); cell(tr, '').appendChild(on);
-      cell(tr, '').appendChild(btn('บันทึก', async ev => {
+      const nRef = REFS.filter(r => r.code === x.code).length;
+      cell(tr, '').appendChild(btn('ภาพ (' + nRef + ')', () => openRefs(x), nRef ? '' : 'warnline'));
+      const acts = document.createElement('div'); acts.className = 'acts';
+      acts.appendChild(btn('บันทึก', async ev => {
         ev.target.disabled = true;
         try { await api('saveProduct', { code: x.code, name: name.value, unit: unit.value, active: on.checked }); setStatus('pStatus', 'บันทึก ' + x.code + ' แล้ว', 'ok'); await loadProducts(); }
         catch (err) { setStatus('pStatus', err.message, 'err'); }
         finally { ev.target.disabled = false; }
       }));
-    }), 5, 'ยังไม่มีอุปกรณ์');
+      acts.appendChild(delBtn(async () => {   // กดซ้ำเพื่อยืนยัน
+        try {
+          const r = await api('deleteProduct', { code: x.code });
+          for (let i = REFS.length - 1; i >= 0; i--) if (REFS[i].code === x.code) REFS.splice(i, 1);
+          if (refProduct && refProduct.code === x.code) { $('refBox').hidden = true; refProduct = null; }
+          setStatus('pStatus', 'ลบอุปกรณ์ ' + (name.value || x.name) + ' (' + x.code + ') แล้ว' + (r.refsDeleted ? ' พร้อมภาพอ้างอิง ' + r.refsDeleted + ' ภาพ' : ''), 'ok');
+          await loadProducts(); renderAdmin();
+        } catch (err) { setStatus('pStatus', err.message, 'err'); }
+      }));
+      cell(tr, '').appendChild(acts);
+    }), 6, 'ยังไม่มีอุปกรณ์');
   } catch (e) { setStatus('uStatus', 'โหลดข้อมูลไม่สำเร็จ: ' + e.message, 'err'); }
 }
 
-/* ยืนยันตัวตนด้วย Google: ทดสอบเข้าระบบด้วย Client ID ใหม่ให้ผ่านก่อนจึงเปิดใช้ (กันล็อกตัวเองออกจากระบบ) */
-async function loadGoogleSettings() {
-  try {
-    const g = await api('googleSettings');
-    const on = !!g.clientId;
-    $('gState').textContent = on ? 'เปิดใช้แล้ว' : 'ยังไม่เปิด'; $('gState').className = 'chip' + (on ? ' admin' : '');
-    $('gOn').hidden = !on; $('gOff').hidden = on;
-    $('gCurrent').textContent = g.clientId || '-'; $('gDisable').hidden = !!g.inCode;
-    $('gOrigin').textContent = location.origin; $('gMe').textContent = me.email;
-  } catch (e) { setStatus('gStatus', e.message, 'err'); }
+/* ---------- ภาพอ้างอิงของอุปกรณ์ (ผู้ดูแล) ---------- */
+let refProduct = null;
+function openRefs(p) {
+  refProduct = p; $('refBox').hidden = false; setStatus('refStatus', CargoVision.ready ? '' : 'กำลังเตรียมระบบจดจำภาพ... รอสักครู่แล้วค่อยเพิ่มภาพ');
+  $('refTitle').textContent = 'ภาพอ้างอิง: ' + p.name + ' (' + p.code + ')';
+  drawRefs(); $('refBox').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
-$('gCopyOrigin').onclick = () => copyText(location.origin, $('gCopyOrigin'));
-$('gTest').onclick = async () => {
-  const clientId = $('gClient').value.trim();
-  if (!/^[\w-]+\.apps\.googleusercontent\.com$/.test(clientId)) { setStatus('gStatus', 'Client ID ต้องลงท้ายด้วย .apps.googleusercontent.com', 'err'); return; }
-  setStatus('gStatus', ''); $('gTestBox').hidden = false;
-  try {
-    await renderGoogleButton($('gTestBtn'), clientId, async credential => {
-      setStatus('gStatus', 'กำลังตรวจสอบกับ Google...');
-      try {
-        await api('enableGoogle', { clientId, credential });
-        $('gTestBox').hidden = true; $('gClient').value = '';
-        setStatus('gStatus', 'เปิดใช้ Google Sign-In แล้ว ครั้งต่อไปทุกคนต้องเข้าระบบด้วยปุ่ม Google', 'ok');
-        loadGoogleSettings();
-      } catch (err) { setStatus('gStatus', err.message, 'err'); }
-    });
-  } catch (e) { setStatus('gStatus', e.message + ' (ตรวจ Client ID และ origin)', 'err'); }
-};
-$('gDisable').onclick = async () => {
-  const b = $('gDisable');
-  if (!b.dataset.armed) {
-    b.dataset.armed = '1'; b.textContent = 'ยืนยัน: กลับไปใช้อีเมลอย่างเดียว';
-    setTimeout(() => { delete b.dataset.armed; b.textContent = 'ปิด Google Sign-In (กลับไปใช้อีเมลอย่างเดียว)'; }, 4000); return;
+function drawRefs() {
+  if (!refProduct) return;
+  const g = $('refGrid'); g.textContent = '';
+  const list = REFS.filter(r => r.code === refProduct.code);
+  if (!list.length) { const n = document.createElement('p'); n.className = 'note'; n.textContent = 'ยังไม่มีภาพอ้างอิง ระบบจะจดจำอุปกรณ์นี้จากภาพไม่ได้'; g.appendChild(n); }
+  list.forEach(r => {
+    const f = document.createElement('figure'), im = document.createElement('img'), c = document.createElement('figcaption');
+    im.src = r.thumb || ''; im.alt = r.name; c.textContent = r.addedBy || '';
+    const x = btn('ลบ', async () => {
+      if (x.dataset.armed !== '1') { x.dataset.armed = '1'; x.textContent = 'ยืนยันลบ'; x.classList.add('danger'); setTimeout(() => { x.dataset.armed = ''; x.textContent = 'ลบ'; x.classList.remove('danger'); }, 3000); return; }
+      try { await api('deleteRef', { id: r.id }); REFS.splice(REFS.indexOf(r), 1); drawRefs(); setStatus('refStatus', 'ลบภาพแล้ว', 'ok'); renderAdmin(); }
+      catch (err) { setStatus('refStatus', err.message, 'err'); }
+    }); x.classList.add('x');
+    f.append(im, c, x); g.appendChild(f);
+  });
+}
+$('refClose').onclick = () => { $('refBox').hidden = true; refProduct = null; };
+$('refFiles').addEventListener('change', async e => {
+  const files = [...e.target.files]; e.target.value = '';
+  if (!files.length || !refProduct) return;
+  if (!CargoVision.ready) { setStatus('refStatus', 'ระบบจดจำภาพยังโหลดไม่เสร็จ กรุณารอสักครู่แล้วลองใหม่', 'err'); return; }
+  let ok = 0;
+  for (const [i, f] of files.entries()) {
+    setStatus('refStatus', 'กำลังวิเคราะห์และบันทึกภาพ ' + (i + 1) + '/' + files.length + '...');
+    try { await addRef(refProduct.code, await fileToImg(f), me.name); ok++; drawRefs(); }
+    catch (err) { setStatus('refStatus', 'ภาพ ' + f.name + ': ' + err.message, 'err'); }
   }
-  delete b.dataset.armed; b.disabled = true;
-  try { await api('disableGoogle'); setStatus('gStatus', 'ปิด Google Sign-In แล้ว', 'ok'); loadGoogleSettings(); }
-  catch (err) { setStatus('gStatus', err.message, 'err'); }
-  finally { b.disabled = false; b.textContent = 'ปิด Google Sign-In (กลับไปใช้อีเมลอย่างเดียว)'; }
-};
+  setStatus('refStatus', 'เพิ่มภาพอ้างอิงแล้ว ' + ok + ' ภาพ', ok ? 'ok' : 'err');
+  renderAdmin();
+});
 
 /* สถานที่รับ / สถานที่ส่ง: เพิ่ม / แก้ไข / ลบ */
 const PLACE_TH = { pickup: 'สถานที่รับ', dropoff: 'สถานที่ส่ง', both: 'รับและส่ง' };
@@ -1298,20 +1480,34 @@ function openUser(u) {
   editingUser = u || null;
   $('uForm').hidden = false; setStatus('uStatus', '');
   $('uUser').value = u ? u.email : ''; $('uUser').disabled = !!u;
-  $('uName').value = u ? u.name : ''; $('uRole').value = u ? u.role : 'user';
+  $('uName').value = u ? u.name : ''; $('uPhone').value = u ? (u.phone || '') : ''; $('uRole').value = u ? u.role : 'user';
   $('uActive').checked = u ? u.active : true;
   $('uPass').value = ''; $('uClear').checked = false; $('uClearWrap').hidden = !(u && u.hasPassword);
-  $('uPassNote').textContent = u && u.hasPassword ? '(ว่าง = ใช้รหัสเดิม)' : '(ไม่บังคับ อย่างน้อย 8 ตัว)';
+  $('uPassNote').textContent = u && u.hasPassword ? '(ว่าง = ใช้รหัสเดิม)' : '(ไม่บังคับ อย่างน้อย 6 ตัว)';
   $('uRole').disabled = $('uActive').disabled = !!(u && u.fixed);
+  passByRole();
   (u ? $('uName') : $('uUser')).focus();
 }
+/* รหัสผ่านใช้เฉพาะผู้ดูแลระบบ: พนักงานไม่ต้องตั้ง (ยืนยันตัวตนด้วยการติ๊กที่หน้าแรก) */
+function passByRole() {
+  const admin = $('uRole').value === 'admin';
+  $('uPassWrap').hidden = !admin;
+  $('uClearWrap').hidden = !admin || !(editingUser && editingUser.hasPassword);
+  if (!admin) { $('uPass').value = ''; $('uClear').checked = false; }
+}
+$('uRole').addEventListener('change', passByRole);
+/* เบอร์โทรในบัญชีผู้ใช้งาน: รับเฉพาะตัวเลข สูงสุด 10 ตัว */
+$('uPhone').addEventListener('input', () => {
+  const v = $('uPhone').value.replace(/^\+?66/, '0').replace(/\D/g, '').slice(0, 10);
+  if ($('uPhone').value !== v) $('uPhone').value = v;
+});
 $('uNew').onclick = () => openUser(null);
 $('uCancel').onclick = () => { $('uForm').hidden = true; };
 $('uForm').addEventListener('submit', async e => {
   e.preventDefault(); $('uSave').disabled = true;
   try {
     await api('saveUser', { isNew: !editingUser, email: $('uUser').value, name: $('uName').value, role: $('uRole').value, active: $('uActive').checked,
-      password: $('uPass').value, clearPassword: $('uClear').checked });
+      phone: $('uPhone').value, password: $('uPass').value, clearPassword: $('uClear').checked });
     $('uPass').value = '';
     $('uForm').hidden = true; setStatus('uStatus', 'บันทึกบัญชีแล้ว', 'ok'); await renderAdmin();
     if (editingUser && editingUser.email === me.email) { me.name = $('uName').value.trim(); $('whoName').textContent = me.name; }
