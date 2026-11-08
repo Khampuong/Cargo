@@ -23,7 +23,8 @@ const MODEL_CHUNK = 1000000;
 const DEFAULT_SPREADSHEET_ID = '1_8C6v41tTDqwMaEhVT1ZM1j2VzEI-aZS3PfTtegj4Ko';
 // ผู้ดูแลระบบถาวร: เข้าระบบครั้งแรกจะถูกสร้างบัญชีให้อัตโนมัติ และลดสิทธิ์/ปิด/ลบบัญชีจากหน้าแอปไม่ได้
 const ADMIN_EMAILS = ['phatthachada.k@gmail.com'];
-// ไม่บังคับ: ใส่ Client ID ของ Google เพื่อแสดงปุ่ม "Sign in with Google" เพิ่มจากการเข้าด้วยอีเมล
+// Client ID ของ Google Sign-In (ปกติตั้งจากหน้าแอป: ผู้ดูแลระบบ > ยืนยันตัวตนด้วย Google ซึ่งเก็บใน Script Property GOOGLE_CLIENT_ID)
+// เมื่อมี Client ID: เข้าระบบได้ด้วยปุ่ม Google เท่านั้น การพิมพ์อีเมลอย่างเดียวจะถูกปิด
 const DEFAULT_GOOGLE_CLIENT_ID = '';
 // โดเมนของ Cloudflare Worker เช่น 'https://cargo.example.com' ("" = ใช้ URL /exec ของ Apps Script ตรง ๆ)
 // ตั้งเป็น Script Property PUBLIC_BASE_URL แทนได้โดยไม่ต้องแก้โค้ด
@@ -135,7 +136,7 @@ const ACTIONS = {
   heartbeat: () => ({ intervalSec: 60 }),
   emailLogin: emailLogin_,
   googleLogin: googleLogin_,
-  authConfig: () => ({ googleClientId: googleClientId_() }),
+  authConfig: () => ({ googleClientId: googleClientId_(), emailLogin: !googleClientId_() }),
   me: (p, who) => ({ user: publicUser_(who) }),
   logout: p => { CacheService.getScriptCache().remove('ses:' + p.session); return {}; },
   products: () => ({ products: getProducts_() }),
@@ -167,6 +168,10 @@ const ACTIONS = {
   allProducts: () => ({ products: listAllProducts_() }),
   saveProduct: saveProduct_,
   deleteRef: deleteRef_,
+  // ยืนยันตัวตนด้วย Google
+  googleSettings: () => ({ clientId: googleClientId_(), inCode: !!DEFAULT_GOOGLE_CLIENT_ID }),
+  enableGoogle: enableGoogle_,
+  disableGoogle: disableGoogle_,
   // ESP32: Token เดียวทั้งระบบ
   systemToken: () => ({ token: systemToken_(false), apiUrl: apiUrl_(), devices: listDevices_() }),
   regenToken: () => ({ token: systemToken_(true), apiUrl: apiUrl_() }),
@@ -358,8 +363,33 @@ function googleLogin_(p) {
   return startSession_(row);
 }
 
-/* ---------- เข้าสู่ระบบด้วยอีเมล (ไม่มีรหัสผ่าน/รหัสยืนยัน): อีเมลต้องลงทะเบียนในชีต Users ---------- */
+/* เปิดใช้ Google Sign-In: ผู้ดูแลต้องทดสอบเข้าระบบด้วย Client ID ใหม่ด้วยบัญชีของตัวเองให้ผ่านก่อน จึงบันทึก
+   (กันตั้ง Client ID ผิดแล้วไม่มีใครเข้าระบบได้ เพราะเมื่อเปิดแล้วการเข้าด้วยอีเมลอย่างเดียวจะถูกปิด) */
+function enableGoogle_(p, who) {
+  const clientId = String(p.clientId || '').trim();
+  if (!/^[\w-]+\.apps\.googleusercontent\.com$/.test(clientId)) fail_('bad_client_id', 'Client ID ต้องลงท้ายด้วย .apps.googleusercontent.com');
+  const info = verifyGoogleIdToken_(String(p.credential || ''), clientId);
+  if (String(info.email || '').toLowerCase() !== who.email) {
+    fail_('wrong_account', 'ทดสอบด้วยบัญชี ' + info.email + ' แต่คุณเข้าระบบอยู่ด้วย ' + who.email + ' กรุณาเลือกบัญชีเดียวกัน');
+  }
+  PropertiesService.getScriptProperties().setProperty('GOOGLE_CLIENT_ID', clientId);
+  return { clientId: clientId };
+}
+
+function disableGoogle_() {
+  if (DEFAULT_GOOGLE_CLIENT_ID) fail_('in_code', 'Client ID ถูกตั้งไว้ใน Code.gs (DEFAULT_GOOGLE_CLIENT_ID) ต้องลบออกจากโค้ดแล้ว Deploy ใหม่');
+  PropertiesService.getScriptProperties().deleteProperty('GOOGLE_CLIENT_ID');
+  return {};
+}
+
+/* กู้คืน: รันในหน้าแก้ไขสคริปต์ ถ้าเข้าระบบด้วย Google ไม่ได้ จะกลับไปใช้การเข้าด้วยอีเมล */
+function resetGoogleLogin() {
+  PropertiesService.getScriptProperties().deleteProperty('GOOGLE_CLIENT_ID');
+}
+
+/* ---------- เข้าสู่ระบบด้วยอีเมลอย่างเดียว: ใช้ได้เฉพาะตอนยังไม่เปิด Google Sign-In ---------- */
 function emailLogin_(p) {
+  if (googleClientId_()) fail_('google_only', 'ระบบนี้ยืนยันตัวตนด้วย Google กรุณากดปุ่ม "ลงชื่อเข้าใช้ด้วย Google"');
   const email = String(p.email || '').trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) fail_('bad_email', 'กรุณาใส่อีเมลให้ถูกต้อง');
   return startSession_(loginRow_(email));

@@ -109,6 +109,7 @@
   input[type=date], input[type=datetime-local] { width:100%; padding:9px 10px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--fg); font:inherit; }
   .acts { display:flex; gap:6px; }
   pre.cfg { margin:0; white-space:pre-wrap; font-size:.8rem; line-height:1.6; }
+  ol.steps { margin:0; padding-left:20px; display:flex; flex-direction:column; gap:6px; font-size:.9rem; }
   .tokrow { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
   .tokrow .token { flex:1; min-width:220px; }
   .assign { margin-bottom:12px; }
@@ -209,12 +210,16 @@
       <p>บันทึกการขนส่ง ติดตามเส้นทางรับ-ส่ง เก็บข้อมูลใน Google Sheet</p>
       <div id="loginArt"></div>
     </div>
-    <form class="fields" id="emailForm">
+    <form class="fields" id="emailForm" hidden>
       <p>เข้าสู่ระบบด้วยอีเมลที่ผู้ดูแลระบบลงทะเบียนไว้</p>
       <div><label class="label" for="lEmail">อีเมล</label><input type="email" id="lEmail" autocomplete="email" autocapitalize="off" required></div>
       <button class="b primary" type="submit" id="lSend">เข้าสู่ระบบ</button>
     </form>
-    <div id="gBox" hidden><div class="or">หรือ</div><div id="gBtn" class="gbtn"></div></div>
+    <div id="gBox" class="fields" hidden>
+      <p>ยืนยันตัวตนด้วยบัญชี Google ของคุณ (ต้องเป็นอีเมลที่ผู้ดูแลระบบลงทะเบียนไว้)</p>
+      <div id="gBtn" class="gbtn"></div>
+    </div>
+    <div class="note" id="lLoading">กำลังโหลด...</div>
     <div class="err" id="lMsg" role="alert"></div>
   </div>
 </div>
@@ -222,7 +227,7 @@
 <div class="wrap" id="appView" hidden>
   <header class="topbar">
     <div class="brand">
-      <span class="logo" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h11v9H3z"/><path d="M14 10h4l3 3v3h-7"/><circle cx="7" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/></svg></span>
+      <span class="logo" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 4h2"/><path d="M19 4v12H3"/><rect x="5" y="8" width="7" height="8" rx="1"/><circle cx="6" cy="19.5" r="1.6"/><circle cx="16" cy="19.5" r="1.6"/></svg></span>
       <span>Cargo Bot<small>ขนส่งอุปกรณ์</small></span>
     </div>
     <div class="who">
@@ -251,20 +256,23 @@
         <g><path d="M316 52c-10-13-15-20-15-27a15 15 0 0 1 30 0c0 7-5 14-15 27z" fill="#fff"/><circle cx="316" cy="25" r="5.5" fill="var(--hero2)"/></g>
         <rect x="0" y="184" width="360" height="5" rx="2.5" fill="#fff" fill-opacity=".35"/>
         <path d="M14 199 H346" stroke="#fff" stroke-opacity=".28" stroke-width="3" stroke-dasharray="18 14"/>
+        <!-- รถเข็นแบบพื้นเรียบ (platform trolley) บรรทุกกล่อง -->
         <g class="truck">
-          <rect x="30" y="84" width="182" height="88" rx="10" fill="#fff"/>
-          <rect x="30" y="84" width="182" height="14" rx="7" fill="#ffd27a"/>
-          <g fill="none" stroke="var(--hero2)" stroke-width="3" stroke-linejoin="round">
-            <rect x="52" y="116" width="36" height="36" rx="4"/><path d="M70 116v12"/>
-            <rect x="98" y="116" width="36" height="36" rx="4"/><path d="M116 116v12"/>
-            <rect x="144" y="116" width="36" height="36" rx="4"/><path d="M162 116v12"/>
+          <path d="M258 158V82a14 14 0 0 1 14-14h20" fill="none" stroke="#fff" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+          <rect x="284" y="62" width="22" height="12" rx="6" fill="#ffd27a"/>
+          <g stroke="var(--hero2)" stroke-width="3" stroke-linejoin="round">
+            <rect x="74" y="98" width="82" height="60" rx="5" fill="#ffd27a"/>
+            <path d="M115 98v18M74 112h82" fill="none" stroke-opacity=".55"/>
+            <rect x="162" y="110" width="78" height="48" rx="5" fill="#fff"/>
+            <path d="M201 110v16" fill="none"/>
+            <rect x="92" y="52" width="58" height="46" rx="5" fill="#fff"/>
+            <path d="M121 52v14" fill="none"/>
           </g>
-          <path d="M216 104h46l32 32v36h-78z" fill="#fff"/>
-          <path d="M226 112h31l22 24h-53z" fill="#a8e6f3"/>
-          <rect x="286" y="148" width="9" height="9" rx="2" fill="#ffd27a"/>
-          <g class="wheel"><circle cx="76" cy="174" r="17" fill="#0c3340"/><circle cx="76" cy="174" r="6.5" fill="#fff"/></g>
-          <g class="wheel"><circle cx="168" cy="174" r="17" fill="#0c3340"/><circle cx="168" cy="174" r="6.5" fill="#fff"/></g>
-          <g class="wheel"><circle cx="258" cy="174" r="17" fill="#0c3340"/><circle cx="258" cy="174" r="6.5" fill="#fff"/></g>
+          <rect x="60" y="158" width="206" height="12" rx="5" fill="#fff"/>
+          <rect x="86" y="170" width="6" height="8" fill="#fff"/>
+          <rect x="236" y="170" width="6" height="8" fill="#fff"/>
+          <g class="wheel"><circle cx="89" cy="181" r="12" fill="#0c3340"/><circle cx="89" cy="181" r="4.5" fill="#fff"/></g>
+          <g class="wheel"><circle cx="239" cy="181" r="12" fill="#0c3340"/><circle cx="239" cy="181" r="4.5" fill="#fff"/></g>
         </g>
       </svg>
     </div>
@@ -399,6 +407,27 @@
   <!-- ผู้ดูแลระบบ -->
   <section id="v-admin" class="col" hidden>
     <div class="card">
+      <div class="bar" style="margin-bottom:8px"><h2 style="margin:0">ยืนยันตัวตนด้วย Google</h2><span class="chip" id="gState">-</span></div>
+      <div id="gOff" class="fields" hidden>
+        <p class="note">ตอนนี้ใครรู้อีเมลที่ลงทะเบียนไว้ก็เข้าระบบได้ เปิด Google Sign-In เพื่อให้ Google ยืนยันว่าเป็นเจ้าของอีเมลจริง</p>
+        <ol class="steps">
+          <li>ไปที่ <a href="https://console.cloud.google.com/auth/clients" target="_blank" rel="noopener">Google Cloud Console › Clients</a> สร้าง Client ชนิด <b>Web application</b></li>
+          <li>ใส่ <b>Authorized JavaScript origins</b>: <code class="token" id="gOrigin" style="display:inline-block;padding:2px 8px">-</code>
+            <button class="b sm" type="button" id="gCopyOrigin">คัดลอก</button></li>
+          <li>ไปที่ <b>Audience</b> แล้วกด <b>Publish app</b> จากนั้นคัดลอก Client ID มาวางด้านล่าง (การตั้งค่า origin อาจใช้เวลาประมาณ 5 นาทีจึงจะมีผล)</li>
+        </ol>
+        <div><label class="label" for="gClient">Client ID</label><input type="text" id="gClient" placeholder="xxxx.apps.googleusercontent.com" autocomplete="off"></div>
+        <button class="b primary" type="button" id="gTest" style="max-width:320px">ทดสอบด้วยบัญชี Google ของฉัน</button>
+        <div id="gTestBox" hidden><p class="note">กดปุ่ม Google ด้านล่างแล้วเลือกบัญชี <b id="gMe">-</b> ถ้าผ่าน ระบบจะเปิดใช้ Google Sign-In ทันที</p><div id="gTestBtn" class="gbtn" style="justify-content:flex-start"></div></div>
+      </div>
+      <div id="gOn" class="fields" hidden>
+        <p class="note">เปิดใช้แล้ว ทุกคนต้องกดปุ่ม Google และใช้บัญชีที่อีเมลตรงกับชีต Users ส่วนการเข้าระบบด้วยการพิมพ์อีเมลอย่างเดียวถูกปิดแล้ว</p>
+        <div><div class="label">Client ID</div><div class="token" id="gCurrent">-</div></div>
+        <button class="b danger" type="button" id="gDisable" style="max-width:320px">ปิด Google Sign-In (กลับไปใช้อีเมลอย่างเดียว)</button>
+      </div>
+      <div class="status" id="gStatus"></div>
+    </div>
+    <div class="card">
       <div class="bar" style="margin-bottom:8px"><h2 style="margin:0">มอบหมายสถานที่รับ-ส่งให้พนักงาน</h2>
         <button class="b primary sm" type="button" id="aNew">+ มอบหมายงาน</button></div>
       <form class="box" id="aForm" hidden>
@@ -482,7 +511,7 @@
       <div class="card">
         <div class="bar" style="margin-bottom:8px"><h2 style="margin:0">บัญชีผู้ใช้งาน</h2>
           <button class="b primary sm" type="button" id="uNew">+ เพิ่มบัญชี</button></div>
-        <p class="note" style="margin-bottom:8px">ลงทะเบียนอีเมลอย่างเดียว เจ้าของอีเมลใช้อีเมลนี้เข้าสู่ระบบได้ทันที ไม่ต้องตั้งรหัสผ่าน</p>
+        <p class="note" style="margin-bottom:8px">ลงทะเบียนอีเมลอย่างเดียว ไม่ต้องตั้งรหัสผ่าน เจ้าของอีเมลเข้าระบบด้วยบัญชี Google ของอีเมลนี้ (เมื่อเปิด Google Sign-In)</p>
         <form class="box" id="uForm" hidden>
           <div class="form-grid">
             <div><label class="label" for="uUser">อีเมล</label><input type="email" id="uUser" autocomplete="off" autocapitalize="off"></div>
@@ -554,7 +583,7 @@ function showOnly(id) { ['loginView', 'appView'].forEach(v => $(v).hidden = v !=
 function showLogin(msg) {
   session = null; me = null; store.set('cargo.session', null);
   showOnly('loginView'); $('lMsg').textContent = msg || '';
-  $('lEmail').value = store.get('cargo.email') || ''; $('lEmail').focus();
+  $('lEmail').value = store.get('cargo.email') || '';
   loadGoogleButton();
 }
 $('emailForm').addEventListener('submit', async e => {
@@ -572,9 +601,10 @@ function signedIn(r) {
   start(r.user);
 }
 
-/* ปุ่ม Sign in with Google (แสดงเมื่อใส่ DEFAULT_GOOGLE_CLIENT_ID ใน Code.gs เท่านั้น) */
+/* Google Sign-In: เมื่อผู้ดูแลเปิดใช้ (มี Client ID) หน้าเข้าสู่ระบบมีแค่ปุ่ม Google, ยังไม่เปิด = เข้าด้วยอีเมล */
 let gisReady = null;
 function loadGis() {
+  if (window.google && google.accounts && google.accounts.id) return Promise.resolve();
   return gisReady || (gisReady = new Promise((res, rej) => {
     const s = document.createElement('script'); s.src = 'https://accounts.google.com/gsi/client'; s.async = true;
     s.onload = res; s.onerror = () => { gisReady = null; rej(new Error('โหลดปุ่ม Google ไม่ได้')); };
@@ -583,18 +613,29 @@ function loadGis() {
 }
 async function loadGoogleButton() {
   let cfg;
-  try { cfg = await api('authConfig'); } catch (e) { return; }
-  $('gBox').hidden = !cfg.googleClientId;
+  try { cfg = await api('authConfig'); } catch (e) { $('lLoading').textContent = 'เชื่อมต่อระบบไม่ได้ กรุณาลองใหม่'; return; }
+  $('lLoading').hidden = true;
+  $('emailForm').hidden = !cfg.emailLogin; $('gBox').hidden = !cfg.googleClientId;
+  if (cfg.emailLogin) $('lEmail').focus();
   if (!cfg.googleClientId) return;
   try {
-    await loadGis();
-    google.accounts.id.initialize({ client_id: cfg.googleClientId, callback: async resp => {
+    await renderGoogleButton($('gBtn'), cfg.googleClientId, async credential => {
       $('lMsg').textContent = 'กำลังตรวจสอบบัญชี Google...';
-      try { signedIn(await api('googleLogin', { credential: resp.credential })); } catch (err) { $('lMsg').textContent = err.message; }
-    } });
-    $('gBtn').textContent = '';
-    google.accounts.id.renderButton($('gBtn'), { theme: 'outline', size: 'large', text: 'signin_with', locale: 'th', width: 336 });
-  } catch (e) { $('gBox').hidden = true; }
+      try { signedIn(await api('googleLogin', { credential })); } catch (err) { $('lMsg').textContent = err.message; }
+    }, true);
+  } catch (e) { $('lMsg').textContent = e.message + ' กรุณาลองโหลดหน้าใหม่'; }
+}
+/* autoPrompt = แสดง One Tap ทันที: คนที่เคยเลือกบัญชีแล้วจะเข้าระบบเองโดยไม่ต้องกดหรือพิมพ์อีเมล
+   (หลังกดออกจากระบบ Google จะไม่เข้าให้อัตโนมัติจนกว่าจะเลือกบัญชีเองอีกครั้ง) ถ้า One Tap ใช้ไม่ได้ ยังมีปุ่ม Google */
+async function renderGoogleButton(el, clientId, onCredential, autoPrompt) {
+  await loadGis();
+  google.accounts.id.initialize({
+    client_id: clientId, callback: resp => onCredential(resp.credential),
+    auto_select: !!autoPrompt, cancel_on_tap_outside: false, itp_support: true, use_fedcm_for_prompt: true
+  });
+  el.textContent = '';
+  google.accounts.id.renderButton(el, { theme: 'outline', size: 'large', text: 'signin_with', locale: 'th', width: 300 });
+  if (autoPrompt) try { google.accounts.id.prompt(); } catch (e) { /* ใช้ปุ่มแทน */ }
 }
 $('logout').onclick = () => {
   api('logout').catch(() => {});
@@ -975,7 +1016,7 @@ const ymd = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0
 async function renderAdmin() {
   if (!isAdmin()) return;
   if (!$('fFrom').value) { $('fFrom').value = ymd(new Date(Date.now() - 6 * 86400000)); $('fTo').value = ymd(new Date()); }
-  loadMoves(); loadAssignAdmin(); loadPlacesAdmin();
+  loadMoves(); loadAssignAdmin(); loadPlacesAdmin(); loadGoogleSettings();
   try {
     const [u, p] = await Promise.all([api('users'), api('allProducts')]);
     const ml = $('moverList'); ml.textContent = '';
@@ -1008,6 +1049,46 @@ async function renderAdmin() {
     }), 5, 'ยังไม่มีอุปกรณ์');
   } catch (e) { setStatus('uStatus', 'โหลดข้อมูลไม่สำเร็จ: ' + e.message, 'err'); }
 }
+
+/* ยืนยันตัวตนด้วย Google: ทดสอบเข้าระบบด้วย Client ID ใหม่ให้ผ่านก่อนจึงเปิดใช้ (กันล็อกตัวเองออกจากระบบ) */
+async function loadGoogleSettings() {
+  try {
+    const g = await api('googleSettings');
+    const on = !!g.clientId;
+    $('gState').textContent = on ? 'เปิดใช้แล้ว' : 'ยังไม่เปิด'; $('gState').className = 'chip' + (on ? ' admin' : '');
+    $('gOn').hidden = !on; $('gOff').hidden = on;
+    $('gCurrent').textContent = g.clientId || '-'; $('gDisable').hidden = !!g.inCode;
+    $('gOrigin').textContent = location.origin; $('gMe').textContent = me.email;
+  } catch (e) { setStatus('gStatus', e.message, 'err'); }
+}
+$('gCopyOrigin').onclick = () => copyText(location.origin, $('gCopyOrigin'));
+$('gTest').onclick = async () => {
+  const clientId = $('gClient').value.trim();
+  if (!/^[\w-]+\.apps\.googleusercontent\.com$/.test(clientId)) { setStatus('gStatus', 'Client ID ต้องลงท้ายด้วย .apps.googleusercontent.com', 'err'); return; }
+  setStatus('gStatus', ''); $('gTestBox').hidden = false;
+  try {
+    await renderGoogleButton($('gTestBtn'), clientId, async credential => {
+      setStatus('gStatus', 'กำลังตรวจสอบกับ Google...');
+      try {
+        await api('enableGoogle', { clientId, credential });
+        $('gTestBox').hidden = true; $('gClient').value = '';
+        setStatus('gStatus', 'เปิดใช้ Google Sign-In แล้ว ครั้งต่อไปทุกคนต้องเข้าระบบด้วยปุ่ม Google', 'ok');
+        loadGoogleSettings();
+      } catch (err) { setStatus('gStatus', err.message, 'err'); }
+    });
+  } catch (e) { setStatus('gStatus', e.message + ' (ตรวจ Client ID และ origin)', 'err'); }
+};
+$('gDisable').onclick = async () => {
+  const b = $('gDisable');
+  if (!b.dataset.armed) {
+    b.dataset.armed = '1'; b.textContent = 'ยืนยัน: กลับไปใช้อีเมลอย่างเดียว';
+    setTimeout(() => { delete b.dataset.armed; b.textContent = 'ปิด Google Sign-In (กลับไปใช้อีเมลอย่างเดียว)'; }, 4000); return;
+  }
+  delete b.dataset.armed; b.disabled = true;
+  try { await api('disableGoogle'); setStatus('gStatus', 'ปิด Google Sign-In แล้ว', 'ok'); loadGoogleSettings(); }
+  catch (err) { setStatus('gStatus', err.message, 'err'); }
+  finally { b.disabled = false; b.textContent = 'ปิด Google Sign-In (กลับไปใช้อีเมลอย่างเดียว)'; }
+};
 
 /* สถานที่รับ / สถานที่ส่ง: เพิ่ม / แก้ไข / ลบ */
 const PLACE_TH = { pickup: 'สถานที่รับ', dropoff: 'สถานที่ส่ง', both: 'รับและส่ง' };

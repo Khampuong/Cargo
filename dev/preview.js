@@ -69,6 +69,8 @@ const ctx = {
   // ใช้ตรวจ Google ID token กับ Google จริง (UrlFetchApp เป็นแบบ synchronous จึงเรียกผ่าน curl)
   UrlFetchApp: {
     fetch(url) {
+      const mock = MOCK_GOOGLE && url.startsWith('https://oauth2.googleapis.com/tokeninfo') && mockTokenInfo(url);
+      if (mock) return mock;
       const out = require('child_process').execFileSync('curl', ['-s', '-w', '\n%{http_code}', url], { encoding: 'utf8' });
       const i = out.lastIndexOf('\n');
       return { getResponseCode: () => Number(out.slice(i + 1)), getContentText: () => out.slice(0, i) };
@@ -110,6 +112,63 @@ const defaultId = vm.runInContext('DEFAULT_SPREADSHEET_ID', ctx);
 if (defaultId) mkBook('Database Cargo', defaultId).insertSheet('ชีต1');
 
 /* ---------- หน้าเว็บ + google.script.run จำลอง ---------- */
+/* MOCK_GOOGLE=1: จำลอง Google Sign-In ทั้งปุ่ม/One Tap (google.accounts.id) และการตรวจ token (tokeninfo)
+   ไม่ต้องมี Client ID จริง และเปิด Google Sign-In ไว้ตั้งแต่เริ่ม
+   ปุ่มจำลองแสดงรายการบัญชีให้กดเลือก (บัญชีในชีต Users) แล้วสร้าง credential "mock.<base64url JSON>.sig"
+   One Tap จำลอง: จำบัญชีล่าสุดใน localStorage แล้วเข้าระบบให้เอง จนกว่าจะกดออกจากระบบ */
+const MOCK_GOOGLE = process.env.MOCK_GOOGLE === '1';
+const MOCK_CLIENT_ID = 'preview-mock.apps.googleusercontent.com';
+if (MOCK_GOOGLE) props.GOOGLE_CLIENT_ID = MOCK_CLIENT_ID;   // เปิด Google Sign-In (จำลอง) ตั้งแต่เริ่ม
+function mockTokenInfo(url) {
+  const tok = new URL(url).searchParams.get('id_token') || '';
+  if (!tok.startsWith('mock.')) return null;
+  let claims;
+  try { claims = JSON.parse(Buffer.from(tok.split('.')[1], 'base64url').toString('utf8')); } catch (e) { return null; }
+  const info = Object.assign({ iss: 'https://accounts.google.com', exp: String(Math.floor(Date.now() / 1000) + 3600), email_verified: 'true' }, claims);
+  return { getResponseCode: () => 200, getContentText: () => JSON.stringify(info) };
+}
+const GIS_MOCK = `<script>
+(function () {
+  const ls = { get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } },
+               set: (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} } };
+  const id = window.google.accounts = { id: {
+    initialize(cfg) { this.cfg = cfg; },
+    signIn(email) {
+      ls.set('mockGoogleLast', email); ls.set('mockGoogleNoAuto', null);
+      const claims = { email, name: email.split('@')[0], aud: this.cfg.client_id };
+      const b64 = btoa(unescape(encodeURIComponent(JSON.stringify(claims)))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');
+      this.cfg.callback({ credential: 'mock.' + b64 + '.sig' });
+    },
+    async chooser() {   // จำลองหน้าเลือกบัญชีของ Google: กดเลือก ไม่ต้องพิมพ์
+      if (window.__mockGoogleEmail) return this.signIn(window.__mockGoogleEmail);
+      const list = await fetch('/dev/accounts').then(r => r.json()).catch(() => []);
+      const box = document.createElement('div');
+      box.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);display:grid;place-items:center;z-index:99';
+      box.innerHTML = '<div style="background:#fff;color:#16202c;border-radius:12px;padding:18px;width:min(340px,90vw);font:15px sans-serif">' +
+        '<b>เลือกบัญชี (Google จำลอง)</b><div class="acc" style="display:flex;flex-direction:column;gap:6px;margin-top:10px"></div>' +
+        '<button type="button" class="other" style="margin-top:10px">ใช้บัญชีอื่น</button> <button type="button" class="x">ยกเลิก</button></div>';
+      list.forEach(a => {
+        const b = document.createElement('button'); b.type = 'button'; b.style.cssText = 'text-align:left;padding:8px;border:1px solid #d9dee5;border-radius:8px;background:#f3f5f7;cursor:pointer';
+        b.innerHTML = '<b></b><br><small></small>'; b.querySelector('b').textContent = a.name; b.querySelector('small').textContent = a.email;
+        b.onclick = () => { box.remove(); this.signIn(a.email); }; box.querySelector('.acc').appendChild(b);
+      });
+      box.querySelector('.other').onclick = () => { const e = prompt('อีเมล Google'); box.remove(); if (e) this.signIn(e); };
+      box.querySelector('.x').onclick = () => box.remove();
+      document.body.appendChild(box);
+    },
+    renderButton(el) {
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'b'; b.textContent = 'ลงชื่อเข้าใช้ด้วย Google (จำลอง)';
+      b.onclick = () => this.chooser(); el.appendChild(b);
+    },
+    prompt() {   // One Tap: เคยเลือกบัญชีแล้ว และไม่ได้กดออกจากระบบ → เข้าให้เอง
+      const last = ls.get('mockGoogleLast');
+      if (this.cfg && this.cfg.auto_select && last && !ls.get('mockGoogleNoAuto')) setTimeout(() => this.signIn(last), 300);
+    },
+    disableAutoSelect() { ls.set('mockGoogleNoAuto', '1'); }
+  } };
+})();
+</script>`;
+
 const SHIM = `<script>
 window.google = { script: { get run() {
   let ok = () => {}, fail = () => {};
@@ -127,7 +186,7 @@ window.google = { script: { get run() {
 function renderIndex() {
   const html = fs.readFileSync(path.join(GAS, 'Index.html'), 'utf8')
     .replace(/<\?!=\s*include_\('(\w+)'\)\s*\?>/g, (_, n) => fs.readFileSync(path.join(GAS, n + '.html'), 'utf8'));
-  return html.replace('<head>', '<head>\n' + SHIM);
+  return html.replace('<head>', '<head>\n' + SHIM + (MOCK_GOOGLE ? GIS_MOCK : ''));
 }
 
 http.createServer((req, res) => {
@@ -158,6 +217,14 @@ http.createServer((req, res) => {
   if (photo && photos[photo[1]]) {
     res.writeHead(200, { 'Content-Type': photos[photo[1]].type });
     res.end(photos[photo[1]].bytes);
+    return;
+  }
+  if (req.url === '/dev/accounts') {   // บัญชีให้เลือกในหน้าเลือกบัญชี Google จำลอง: ผู้ดูแลถาวร + บัญชีในชีต Users
+    const users = (books[defaultId] && books[defaultId].sheets.Users) ? books[defaultId].sheets.Users.rows.slice(1) : [];
+    const list = users.map(r => ({ email: String(r[0]), name: String(r[1] || r[0]) }));
+    vm.runInContext('ADMIN_EMAILS', ctx).forEach(e => { if (!list.some(a => a.email === e)) list.unshift({ email: e, name: e }); });
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify(list));
     return;
   }
   const sheet = req.url.match(/^\/sheet\/([\w-]+)/);
