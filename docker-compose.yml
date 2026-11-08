@@ -1,0 +1,25 @@
+# MySQL ของ Cargo Bot (แยกจากฐานข้อมูลอื่นในเครื่อง ใช้พอร์ต 3307)
+#   cd server && npm run db:up      (อ่านรหัสผ่านจาก server/.env)
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: cargo-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${DB_NAME:-cargo}
+      MYSQL_USER: ${DB_USER:-cargo}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?ตั้ง DB_PASSWORD ใน server/.env}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?ตั้ง DB_ROOT_PASSWORD ใน server/.env}
+      TZ: UTC
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci", "--default-time-zone=+00:00"]
+    ports:
+      - "127.0.0.1:${DB_PORT:-3307}:3306"
+    volumes:
+      - cargo-mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${DB_ROOT_PASSWORD}"]
+      interval: 5s
+      retries: 20
+
+volumes:
+  cargo-mysql-data:

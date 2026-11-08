@@ -1,0 +1,12 @@
+# Cloudflare Worker หน้าบ้านของ Cargo Bot (ดูวิธี deploy ใน README.md หัวข้อ Cloudflare)
+name = "cargo-bot"
+main = "worker.js"
+compatibility_date = "2025-01-01"
+
+# ใช้โดเมนของตัวเอง (โดเมนต้องอยู่ใน Cloudflare แล้ว) — เอาเครื่องหมาย # ออกแล้วแก้ชื่อโดเมน
+# routes = [{ pattern = "cargo.example.com", custom_domain = true }]
+
+[vars]
+# URL จาก Apps Script: Deploy > Manage deployments > Web app URL (ลงท้ายด้วย /exec)
+APPS_SCRIPT_URL = "https://script.google.com/macros/s/XXXXXXXXXXXX/exec"
+APP_TITLE = "Cargo Bot ขนส่งอุปกรณ์"
