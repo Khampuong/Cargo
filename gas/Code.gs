@@ -15,7 +15,8 @@
  */
 
 const TZ = 'Asia/Bangkok';
-const SESSION_SEC = 21600;           // เซสชันหน้าเว็บ 6 ชั่วโมง (นับใหม่ทุกครั้งที่ใช้งาน)
+const SESSION_SEC = 21600;           // แคชเซสชัน 6 ชั่วโมง (สูงสุดของ CacheService)
+const SESSION_DAYS = 365;            // เข้าระบบครั้งเดียว อยู่ในระบบต่อได้ 1 ปี (นับใหม่ทุกวันที่ใช้งาน) จนกว่าจะกดออกจากระบบ
 const MODEL_FILE = 'cargo_model_weights.b64.txt';
 const MODEL_CHUNK = 1000000;
 // Google Sheet ฐานข้อมูล (Script Property SPREADSHEET_ID ใช้แทนได้ถ้าต้องการเปลี่ยนโดยไม่แก้โค้ด)
@@ -35,7 +36,7 @@ const SHEETS = {
   Moves: ['Timestamp', 'Code', 'Name', 'Qty', 'Unit', 'Mover', 'Pickup', 'Dropoff', 'Method', 'Score', 'Source', 'Photo', 'ReqId', 'AssignId'],
   Assignments: ['Id', 'Email', 'Pickup', 'Dropoff', 'Note', 'Status', 'CreatedAt', 'CreatedBy', 'UpdatedAt'],
   Places: ['Id', 'Name', 'Type', 'Active', 'CreatedAt', 'CreatedBy'],
-  Users: ['Email', 'Name', 'Role', 'Active', 'LastLogin', 'CreatedAt'],
+  Users: ['Email', 'Name', 'Role', 'Active', 'LastLogin', 'CreatedAt', 'PassHash'],
   Devices: ['DeviceId', 'Name', 'Role', 'TokenHash', 'Active', 'LastSeen', 'Firmware', 'Info', 'CreatedAt', 'Owner'],
   Refs: ['Id', 'Code', 'Name', 'Vec', 'Thumb', 'AddedBy', 'Timestamp']
 };
@@ -84,7 +85,8 @@ const FIELD_DOCS = {
     Role: ['สิทธิ์: user = พนักงาน, admin = ผู้ดูแลระบบ', 'user'],
     Active: ['เปิดใช้งานบัญชี (TRUE/FALSE)', 'TRUE'],
     LastLogin: ['เข้าระบบล่าสุด', '07/11/2026 08:00:00'],
-    CreatedAt: ['วันที่สร้างบัญชี', '01/11/2026 10:00:00']
+    CreatedAt: ['วันที่สร้างบัญชี', '01/11/2026 10:00:00'],
+    PassHash: ['รหัสผ่านที่เข้ารหัสแล้ว (v1$salt$hash) ว่าง = ยังไม่ได้ตั้ง เข้าได้ด้วย Google เท่านั้น', 'v1$9f2c...$51ab...']
   }],
   Products: ['อุปกรณ์ที่ขนส่ง', {
     Code: ['รหัสอุปกรณ์ (A-Z 0-9)', 'TABLE'],
@@ -125,20 +127,23 @@ const ROLES = {
   device: ['ping', 'heartbeat', 'products', 'lookup', 'saveMove'],
   web: ['ping', 'products', 'lookup', 'saveMove', 'dashboard'],
   user: ['ping', 'me', 'logout', 'products', 'lookup', 'places', 'saveMove', 'dashboard',
-    'refs', 'addRef', 'modelInfo', 'modelChunk', 'myAssignments'],
+    'refs', 'addRef', 'modelInfo', 'modelChunk', 'myAssignments', 'setMyPassword'],
   admin: ['*']
 };
 const ROLE_TH = { user: 'พนักงาน', admin: 'ผู้ดูแลระบบ' };
-const PUBLIC = ['emailLogin', 'googleLogin', 'authConfig'];
+const PUBLIC = ['emailLogin', 'googleLogin', 'gmailLogin', 'ticketLogin', 'authConfig'];
 
 const ACTIONS = {
   ping: () => ({ message: 'pong' }),
   heartbeat: () => ({ intervalSec: 60 }),
   emailLogin: emailLogin_,
   googleLogin: googleLogin_,
-  authConfig: () => ({ googleClientId: googleClientId_(), emailLogin: !googleClientId_() }),
+  gmailLogin: gmailLogin_,
+  ticketLogin: ticketLogin_,
+  setMyPassword: setMyPassword_,
+  authConfig: (p, who, via) => ({ googleClientId: googleClientId_(), emailLogin: emailOnlyAllowed_(), gmail: via.gmail || '', loginAppUrl: loginAppUrl_() }),
   me: (p, who) => ({ user: publicUser_(who) }),
-  logout: p => { CacheService.getScriptCache().remove('ses:' + p.session); return {}; },
+  logout: p => { endSession_(p.session); return {}; },
   products: () => ({ products: getProducts_() }),
   lookup: p => ({ product: findProduct_(p.code) }),
   places: () => getPlaces_(),
@@ -183,7 +188,10 @@ const ACTIONS = {
 function doGet(e) {
   const p = Object.assign({}, e && e.parameter);
   if (!p.action) {
-    return HtmlService.createTemplateFromFile('Index').evaluate()
+    const page = HtmlService.createTemplateFromFile('Index');
+    // ?t= มาจากแอปยืนยันตัวตน (gas-login) หลัง Google ยืนยันอีเมลแล้ว หน้าเว็บจะใช้เข้าระบบให้เอง
+    page.loginTicket = /^[^~\s<>"']+~\d+~[0-9a-f]{64}$/.test(String(p.t || '')) ? String(p.t) : '';
+    return page.evaluate()
       .setTitle('Cargo Bot ขนส่งอุปกรณ์')
       .addMetaTag('viewport', 'width=device-width, initial-scale=1')
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);   // ให้หน้า Cloudflare Worker (โดเมนของเรา) แสดงแอปได้
@@ -202,7 +210,13 @@ function doPost(e) {
 
 /* เรียกจากหน้าเว็บด้วย google.script.run */
 function rpc(action, params, session) {
-  return handle_(Object.assign({}, params, { action: action, session: session || '' }));
+  // บัญชี Gmail ของผู้เปิดหน้าเว็บ: Google ยืนยันให้เอง (มีเฉพาะทาง google.script.run ไม่รับจาก /exec ที่ ESP32 เรียก)
+  const via = (action === 'authConfig' || action === 'gmailLogin') ? { gmail: activeEmail_() } : {};
+  return handle_(Object.assign({}, params, { action: action, session: session || '' }), via);
+}
+
+function activeEmail_() {
+  try { return String(Session.getActiveUser().getEmail() || '').trim().toLowerCase(); } catch (e) { return ''; }
 }
 
 function include_(name) {
@@ -218,7 +232,8 @@ function ensureSchema_() {
   props.setProperty('SCHEMA_VERSION', ver);
 }
 
-function handle_(p) {
+function handle_(p, via) {
+  via = via || {};
   try {
     const action = String(p.action || '');
     if (!ACTIONS[action]) fail_('unknown_action', 'ไม่รู้จักคำสั่ง "' + action + '"');
@@ -230,7 +245,7 @@ function handle_(p) {
       if (allowed.indexOf('*') < 0 && allowed.indexOf(action) < 0) fail_('forbidden', 'สิทธิ์ ' + who.role + ' ใช้คำสั่ง ' + action + ' ไม่ได้');
       if (who.kind === 'token') touch_(who, p, action === 'heartbeat');
     }
-    return Object.assign({ ok: true, action: action, serverTime: fmt_(new Date(), 'yyyy-MM-dd HH:mm:ss') }, ACTIONS[action](p, who));
+    return Object.assign({ ok: true, action: action, serverTime: fmt_(new Date(), 'yyyy-MM-dd HH:mm:ss') }, ACTIONS[action](p, who, via));
   } catch (err) {
     if (err && err.apiError) return { ok: false, error: err.apiError, message: err.message };
     console.error(err);
@@ -347,7 +362,10 @@ function listDevices_() {
 
 function startSession_(row) {
   const session = 'ss_' + randomHex_();
-  CacheService.getScriptCache().put('ses:' + session, String(row.Email).toLowerCase(), SESSION_SEC);
+  const email = String(row.Email).toLowerCase();
+  CacheService.getScriptCache().put('ses:' + session, email, SESSION_SEC);
+  cleanSessions_();
+  saveSession_(session, email);
   setCells_('Users', row._row, { LastLogin: new Date() });
   return { session: session, user: publicUser_(userFromRow_(row)) };
 }
@@ -361,6 +379,14 @@ function googleLogin_(p) {
   const row = loginRow_(String(info.email || ''), info.name);
   if (!String(row.Name).trim() && info.name) setCells_('Users', row._row, { Name: text_(info.name) });
   return startSession_(row);
+}
+
+/* ---------- เข้าสู่ระบบด้วยบัญชี Gmail ที่เปิดอยู่ในเบราว์เซอร์ (ไม่ต้องตั้ง Client ID ไม่ต้องพิมพ์อีเมล) ----------
+   Apps Script บอกอีเมลผู้เปิดเว็บได้เมื่อ: เป็นเจ้าของสคริปต์, อยู่โดเมน Google Workspace เดียวกัน
+   หรือ Deploy แบบ "Execute as: User accessing the web app" (ดู README) */
+function gmailLogin_(p, who, via) {
+  if (!via.gmail) fail_('no_gmail', 'ไม่พบบัญชี Gmail ที่เปิดอยู่ กรุณาลงชื่อเข้าใช้ Google ในเบราว์เซอร์ หรือใช้วิธีเข้าระบบด้านล่าง');
+  return startSession_(loginRow_(via.gmail));
 }
 
 /* เปิดใช้ Google Sign-In: ผู้ดูแลต้องทดสอบเข้าระบบด้วย Client ID ใหม่ด้วยบัญชีของตัวเองให้ผ่านก่อน จึงบันทึก
@@ -387,12 +413,92 @@ function resetGoogleLogin() {
   PropertiesService.getScriptProperties().deleteProperty('GOOGLE_CLIENT_ID');
 }
 
-/* ---------- เข้าสู่ระบบด้วยอีเมลอย่างเดียว: ใช้ได้เฉพาะตอนยังไม่เปิด Google Sign-In ---------- */
+/* ---------- เข้าสู่ระบบด้วยอีเมล Google ผ่านอินเทอร์เน็ต (แอปยืนยันตัวตน gas-login) ----------
+   gas-login Deploy แบบ "Execute as: User accessing" จึงรู้อีเมล Gmail ของทุกคนที่ลงชื่อ Google อยู่
+   แล้วส่ง ticket = อีเมล~หมดอายุ(ms)~HMAC-SHA256 กลับมาที่แอปนี้ (?t=) ใช้ได้ครั้งเดียว ภายใน 5 นาที
+   LOGIN_SECRET / LOGIN_APP_URL อยู่ใน Script Properties หรือไฟล์ Secret.gs (สร้างโดย dev/deploy.js ไม่เก็บใน git) */
+function loginSetting_(name) {
+  const v = PropertiesService.getScriptProperties().getProperty(name);
+  if (v) return v;
+  if (name === 'LOGIN_SECRET' && typeof LOGIN_SECRET !== 'undefined') return LOGIN_SECRET;
+  if (name === 'LOGIN_APP_URL' && typeof LOGIN_APP_URL !== 'undefined') return LOGIN_APP_URL;
+  return '';
+}
+function loginAppUrl_() { return loginSetting_('LOGIN_SECRET') ? loginSetting_('LOGIN_APP_URL') : ''; }
+function emailOnlyAllowed_() { return !googleClientId_() && !loginAppUrl_(); }
+
+function hmacHex_(s, key) {
+  return Utilities.computeHmacSha256Signature(s, key).map(b => ('0' + (b & 255).toString(16)).slice(-2)).join('');
+}
+
+function ticketLogin_(p) {
+  const bad = msg => fail_('bad_ticket', msg + ' กรุณากด "เข้าสู่ระบบด้วย Google" ใหม่');
+  const m = String(p.ticket || '').match(/^([^~\s]+)~(\d+)~([0-9a-f]{64})$/);
+  const secret = loginSetting_('LOGIN_SECRET');
+  if (!m || !secret) bad('ข้อมูลเข้าสู่ระบบไม่ถูกต้อง');
+  if (hmacHex_(m[1] + '~' + m[2], secret) !== m[3]) bad('ข้อมูลเข้าสู่ระบบไม่ถูกต้อง');
+  if (Number(m[2]) < Date.now()) bad('ลิงก์เข้าสู่ระบบหมดอายุแล้ว');
+  const cache = CacheService.getScriptCache();
+  if (cache.get('tk:' + m[3])) bad('ลิงก์เข้าสู่ระบบนี้ถูกใช้ไปแล้ว');
+  cache.put('tk:' + m[3], '1', 600);
+  return startSession_(loginRow_(m[1]));
+}
+
+/* ---------- เข้าสู่ระบบด้วยอีเมล + รหัสผ่าน ----------
+   รหัสผ่านเก็บเป็น v1$salt$hash (HMAC-SHA256 วนซ้ำ) ในคอลัมน์ Users.PassHash ไม่เก็บรหัสจริง
+   ใส่ผิด 5 ครั้ง ล็อกอีเมลนั้น 15 นาที / ไม่ใส่รหัสผ่าน = เข้าด้วยอีเมลอย่างเดียว (เฉพาะตอนยังไม่เปิดการยืนยันด้วย Google) */
+const PASS_ROUNDS = 300, PASS_MAX_FAIL = 5, PASS_LOCK_SEC = 900;
+
+function checkPassword_(pass) {
+  if (pass.length < 8 || pass.length > 128) fail_('weak_password', 'รหัสผ่านต้องยาว 8-128 ตัวอักษร');
+}
+
+function hashPassword_(pass, salt) {
+  salt = salt || randomHex_().slice(0, 32);
+  let h = salt + pass;
+  for (let i = 0; i < PASS_ROUNDS; i++) h = hmacHex_(h + pass, salt);
+  return 'v1$' + salt + '$' + h;
+}
+
+function samePassword_(pass, stored) {
+  const m = String(stored || '').match(/^v1\$([0-9a-f]+)\$([0-9a-f]{64})$/);
+  if (!m) return false;
+  const a = hashPassword_(pass, m[1]), b = stored;
+  let diff = a.length ^ b.length;
+  for (let i = 0; i < Math.min(a.length, b.length); i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
 function emailLogin_(p) {
-  if (googleClientId_()) fail_('google_only', 'ระบบนี้ยืนยันตัวตนด้วย Google กรุณากดปุ่ม "ลงชื่อเข้าใช้ด้วย Google"');
-  const email = String(p.email || '').trim().toLowerCase();
+  const email = String(p.email || '').trim().toLowerCase(), pass = String(p.password || '');
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) fail_('bad_email', 'กรุณาใส่อีเมลให้ถูกต้อง');
-  return startSession_(loginRow_(email));
+  if (!pass) {
+    if (!emailOnlyAllowed_()) fail_('need_password', 'กรุณาใส่รหัสผ่าน หรือกด "Continue with Google"');
+    return startSession_(loginRow_(email));
+  }
+  const cache = CacheService.getScriptCache(), key = 'pwfail:' + email;
+  const fails = Number(cache.get(key) || 0);
+  if (fails >= PASS_MAX_FAIL) fail_('locked', 'ใส่รหัสผ่านผิดหลายครั้ง กรุณารอ 15 นาที หรือเข้าด้วย Google');
+  const row = findUser_(email);
+  if (!row || !isOn_(row.Active) || !samePassword_(pass, row.PassHash)) {
+    cache.put(key, String(fails + 1), PASS_LOCK_SEC);
+    fail_('bad_login', row && isOn_(row.Active) && !String(row.PassHash || '')
+      ? 'บัญชีนี้ยังไม่ได้ตั้งรหัสผ่าน กรุณาเข้าด้วย Google แล้วตั้งรหัสผ่านที่เมนู "ตั้งรหัสผ่าน"'
+      : 'อีเมลหรือรหัสผ่านไม่ถูกต้อง');
+  }
+  cache.remove(key);
+  return startSession_(row);
+}
+
+/* ผู้ใช้ที่เข้าระบบแล้วตั้ง/เปลี่ยนรหัสผ่านของตัวเอง (ถ้ามีรหัสเดิมต้องใส่รหัสเดิมให้ถูก) */
+function setMyPassword_(p, who) {
+  const pass = String(p.password || '');
+  checkPassword_(pass);
+  const row = findUser_(who.email);
+  if (!row) fail_('not_found', 'ไม่พบบัญชี');
+  if (String(row.PassHash || '') && !samePassword_(String(p.oldPassword || ''), row.PassHash)) fail_('bad_login', 'รหัสผ่านเดิมไม่ถูกต้อง');
+  setCells_('Users', row._row, { PassHash: hashPassword_(pass) });
+  return {};
 }
 
 /* หาบัญชีที่เข้าระบบได้: ผู้ดูแลถาวรที่ยังไม่มีบัญชีจะถูกสร้างให้ (พร้อมเตรียมชีตทั้งหมดใน Google Sheet) */
@@ -429,11 +535,44 @@ function isAdminEmail_(email) {
 }
 
 /* ตรวจเซสชันทุกครั้งกับชีต Users เพื่อให้การปิดบัญชี/เปลี่ยนสิทธิ์มีผลทันที */
+/* เซสชันถาวร: แคชหายเมื่อครบ 6 ชั่วโมง จึงเก็บสำเนาใน Script Properties (คีย์เป็นแฮช ไม่เก็บ session จริง)
+   ทำให้เข้าระบบรอบเดียวแล้วใช้ต่อได้ จนกว่าจะกดออกจากระบบ / ไม่ได้ใช้งานเกิน SESSION_DAYS / ผู้ดูแลปิดบัญชี */
+function sessionKey_(session) { return 'S_' + sha256_(String(session)).slice(0, 40); }
+
+function saveSession_(session, email) {
+  PropertiesService.getScriptProperties().setProperty(sessionKey_(session),
+    JSON.stringify({ e: email, x: Date.now() + SESSION_DAYS * 864e5, t: Date.now() }));
+}
+
+function endSession_(session) {
+  if (!/^ss_[0-9a-f]+$/.test(String(session || ''))) return;
+  CacheService.getScriptCache().remove('ses:' + session);
+  PropertiesService.getScriptProperties().deleteProperty(sessionKey_(session));
+}
+
+function cleanSessions_() {
+  const props = PropertiesService.getScriptProperties(), all = props.getProperties(), now = Date.now();
+  Object.keys(all).forEach(k => {
+    if (k.indexOf('S_') !== 0) return;
+    try { if (JSON.parse(all[k]).x < now) props.deleteProperty(k); } catch (e) { props.deleteProperty(k); }
+  });
+}
+
 function session_(session) {
-  const cache = CacheService.getScriptCache(), key = 'ses:' + session, u = cache.get(key);
-  if (!u) fail_('unauthorized', 'กรุณาเข้าสู่ระบบใหม่');
+  session = String(session || '');
+  if (!/^ss_[0-9a-f]+$/.test(session)) fail_('unauthorized', 'กรุณาเข้าสู่ระบบ');
+  const cache = CacheService.getScriptCache(), key = 'ses:' + session;
+  let u = cache.get(key);
+  if (!u) {   // แคชหมดอายุ → ใช้สำเนาถาวร
+    const raw = PropertiesService.getScriptProperties().getProperty(sessionKey_(session));
+    let s = null;
+    try { s = raw && JSON.parse(raw); } catch (e) { s = null; }
+    if (!s || s.x < Date.now()) { endSession_(session); fail_('unauthorized', 'กรุณาเข้าสู่ระบบ'); }
+    u = s.e;
+    if (Date.now() - (s.t || 0) > 864e5) saveSession_(session, u);   // ต่ออายุวันละครั้ง
+  }
   const row = findUser_(u);
-  if (!row || !isOn_(row.Active)) { cache.remove(key); fail_('unauthorized', 'บัญชีนี้ถูกปิดใช้งาน'); }
+  if (!row || !isOn_(row.Active)) { endSession_(session); fail_('unauthorized', 'บัญชีนี้ถูกปิดใช้งาน'); }
   cache.put(key, u, SESSION_SEC);
   return userFromRow_(row);
 }
@@ -455,7 +594,7 @@ function findUser_(email) {
 function listUsers_() {
   return readRows_('Users').filter(r => String(r.Email).trim()).map(r => ({
     email: String(r.Email), name: String(r.Name), role: r.Role === 'admin' || isAdminEmail_(r.Email) ? 'admin' : 'user',
-    active: isOn_(r.Active), lastLogin: dt_(r.LastLogin), fixed: isAdminEmail_(r.Email)
+    active: isOn_(r.Active), lastLogin: dt_(r.LastLogin), fixed: isAdminEmail_(r.Email), hasPassword: !!String(r.PassHash || '')
   }));
 }
 
@@ -466,14 +605,18 @@ function saveUserRow_(p, who) {
   if (!name) fail_('no_name', 'กรุณาใส่ชื่อ-นามสกุล');
   if (who.email === email && (role !== 'admin' || !active)) fail_('self_lock', 'ลดสิทธิ์หรือปิดบัญชีของตัวเองไม่ได้');
   if (isAdminEmail_(email) && (role !== 'admin' || !active)) fail_('fixed_admin', email + ' เป็นผู้ดูแลระบบถาวร ลดสิทธิ์หรือปิดบัญชีไม่ได้');
-  // ลงทะเบียนอีเมลอย่างเดียว ไม่มีรหัสผ่าน: เจ้าของอีเมลเข้าระบบด้วยรหัสที่ส่งไปทางอีเมล
+  // รหัสผ่าน (ไม่บังคับ): ว่าง = ไม่เปลี่ยน, clearPassword = ลบ (เข้าได้ด้วย Google เท่านั้น)
+  const pass = String(p.password || '');
+  if (pass) checkPassword_(pass);
   const row = findUser_(email);
   if (p.isNew) {
     if (row) fail_('exists', 'มีบัญชีอีเมล ' + email + ' อยู่แล้ว');
-    appendRow_('Users', { Email: email, Name: text_(name), Role: role, Active: active, CreatedAt: new Date() });
+    appendRow_('Users', { Email: email, Name: text_(name), Role: role, Active: active, CreatedAt: new Date(), PassHash: pass ? hashPassword_(pass) : '' });
   } else {
     if (!row) fail_('not_found', 'ไม่พบบัญชีอีเมล ' + email);
-    setCells_('Users', row._row, { Name: text_(name), Role: role, Active: active });
+    const upd = { Name: text_(name), Role: role, Active: active };
+    if (pass) upd.PassHash = hashPassword_(pass); else if (p.clearPassword) upd.PassHash = '';
+    setCells_('Users', row._row, upd);
   }
   return {};
 }

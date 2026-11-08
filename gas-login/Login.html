@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<style>
+  :root { --bg:#f3f5f7; --card:#fff; --ink:#16202c; --muted:#5b6876; --brand:#0f6e8c; --line:#d9dee5; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0f151c; --card:#18212b; --ink:#e8edf2; --muted:#9aa7b4; --brand:#3aa7c9; --line:#2a3642; } }
+  body { margin:0; min-height:100vh; display:grid; place-items:center; background:var(--bg); color:var(--ink);
+         font:16px/1.5 "Sarabun","Noto Sans Thai",system-ui,sans-serif; padding:16px; box-sizing:border-box; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:24px; width:min(380px,100%); box-sizing:border-box; }
+  h1 { font-size:20px; margin:0 0 6px; }
+  p { color:var(--muted); margin:0 0 16px; }
+  .email { color:var(--ink); font-weight:600; word-break:break-all; }
+  a.b { display:block; text-align:center; text-decoration:none; background:var(--brand); color:#fff; padding:12px; border-radius:10px; font-weight:600; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>Cargo Bot ขนส่งอุปกรณ์</h1>
+    <? if (email) { ?>
+      <p>Google ยืนยันแล้วว่าคุณคือ<br><span class="email"><?= email ?></span></p>
+      <a class="b" href="<?= link ?>">เข้าสู่ Cargo Bot</a>
+    <? } else { ?>
+      <p>ไม่พบบัญชี Google กรุณาลงชื่อเข้าใช้ Google ในเบราว์เซอร์นี้ แล้วเปิดหน้านี้ใหม่</p>
+    <? } ?>
+  </div>
+</body>
+</html>

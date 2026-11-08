@@ -1,1 +1,4 @@
 esp32/**/config.h
+# คีย์ลับที่ใช้เซ็นการเข้าสู่ระบบ (สร้างตอน Deploy)
+gas/Secret.gs
+gas-login/Secret.gs

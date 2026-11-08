@@ -62,10 +62,12 @@ const ctx = {
     create: name => mkBook(name)
   },
   // PUBLIC_URL = URL สาธารณะ (เช่น Cloudflare Tunnel) ให้ config.h ของ ESP32 ชี้ไปที่ /api ของ URL นั้น
+  // บัญชี Gmail ที่เปิดอยู่ในเบราว์เซอร์ (Apps Script ให้ผ่าน Session) จำลองด้วย GMAIL_USER=อีเมล
+  Session: { getActiveUser: () => ({ getEmail: () => process.env.GMAIL_USER || '' }) },
   ScriptApp: { getService: () => ({ getUrl: () => process.env.PUBLIC_URL ? process.env.PUBLIC_URL.replace(/\/+$/, '') + '/api' : 'http://localhost:' + PORT + '/exec' }) },
   CacheService: { getScriptCache: () => ({ get: k => cache[k] || null, put: (k, v) => { cache[k] = v; }, remove: k => { delete cache[k]; } }) },
   LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
-  PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] || null, setProperty: (k, v) => { props[k] = v; }, deleteProperty: k => { delete props[k]; } }) },
+  PropertiesService: { getScriptProperties: () => ({ getProperties: () => Object.assign({}, props), getProperty: k => props[k] || null, setProperty: (k, v) => { props[k] = v; }, deleteProperty: k => { delete props[k]; } }) },
   // ใช้ตรวจ Google ID token กับ Google จริง (UrlFetchApp เป็นแบบ synchronous จึงเรียกผ่าน curl)
   UrlFetchApp: {
     fetch(url) {
@@ -100,6 +102,7 @@ const ctx = {
     },
     computeDigest: (a, s) => [...crypto.createHash('sha256').update(s, 'utf8').digest()].map(b => b > 127 ? b - 256 : b),
     DigestAlgorithm: {}, Charset: {},
+    computeHmacSha256Signature: (s, key) => [...crypto.createHmac('sha256', key).update(s, 'utf8').digest()].map(b => b > 127 ? b - 256 : b),
     getUuid: () => crypto.randomUUID(),
     base64Decode: s => Buffer.from(s, 'base64'),
     newBlob: (bytes, type) => ({ bytes, type })
@@ -183,9 +186,17 @@ window.google = { script: { get run() {
   return runner;
 } } };
 </script>`;
-function renderIndex() {
+/* MOCK_LOGIN_APP=1: จำลองแอปยืนยันตัวตน gas-login ที่ /dev/login (เลือกบัญชี แล้วส่ง ticket ที่เซ็นแล้วกลับมา /?t=) */
+const MOCK_LOGIN_APP = process.env.MOCK_LOGIN_APP === '1';
+if (MOCK_LOGIN_APP) { props.LOGIN_SECRET = crypto.randomBytes(32).toString('hex'); props.LOGIN_APP_URL = '/dev/login'; }
+function mockTicket(email) {
+  const body = email + '~' + (Date.now() + 5 * 60 * 1000);
+  return body + '~' + crypto.createHmac('sha256', props.LOGIN_SECRET).update(body).digest('hex');
+}
+function renderIndex(ticket) {
   const html = fs.readFileSync(path.join(GAS, 'Index.html'), 'utf8')
-    .replace(/<\?!=\s*include_\('(\w+)'\)\s*\?>/g, (_, n) => fs.readFileSync(path.join(GAS, n + '.html'), 'utf8'));
+    .replace(/<\?!=\s*include_\('(\w+)'\)\s*\?>/g, (_, n) => fs.readFileSync(path.join(GAS, n + '.html'), 'utf8'))
+    .replace('<?= loginTicket ?>', /^[^~\s<>"'\\]+~\d+~[0-9a-f]{64}$/.test(ticket || '') ? ticket : '');
   return html.replace('<head>', '<head>\n' + SHIM + (MOCK_GOOGLE ? GIS_MOCK : ''));
 }
 
@@ -219,6 +230,11 @@ http.createServer((req, res) => {
     res.end(photos[photo[1]].bytes);
     return;
   }
+  if (req.url === '/dev/clear-cache') {   // จำลองแคชของ Apps Script หมดอายุ (เกิน 6 ชั่วโมง)
+    Object.keys(cache).forEach(k => delete cache[k]);
+    res.writeHead(200); res.end('cache cleared');
+    return;
+  }
   if (req.url === '/dev/accounts') {   // บัญชีให้เลือกในหน้าเลือกบัญชี Google จำลอง: ผู้ดูแลถาวร + บัญชีในชีต Users
     const users = (books[defaultId] && books[defaultId].sheets.Users) ? books[defaultId].sheets.Users.rows.slice(1) : [];
     const list = users.map(r => ({ email: String(r[0]), name: String(r[1] || r[0]) }));
@@ -235,9 +251,15 @@ http.createServer((req, res) => {
     res.end(JSON.stringify(out, null, 1));
     return;
   }
+  if (MOCK_LOGIN_APP && req.url.startsWith('/dev/login')) {   // แอปยืนยันตัวตนจำลอง: ?as=อีเมล = Google ยืนยันว่าเป็นบัญชีนี้
+    const as = new URL(req.url, 'http://x').searchParams.get('as');
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    if (as) return res.end('<p>Google ยืนยันแล้ว: ' + as.replace(/[<>&"]/g, '') + '</p><a id="go" href="/?t=' + encodeURIComponent(mockTicket(as.toLowerCase())) + '">เข้าสู่ Cargo Bot</a>');
+    return res.end('<form><b>เลือกบัญชี Google (จำลอง)</b><br><input name="as" type="email" placeholder="อีเมล"><button>ต่อไป</button></form>');
+  }
   if (req.url === '/' || req.url.startsWith('/?')) {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    res.end(renderIndex());
+    res.end(renderIndex(new URL(req.url, 'http://x').searchParams.get('t')));
     return;
   }
   res.writeHead(404); res.end('not found');

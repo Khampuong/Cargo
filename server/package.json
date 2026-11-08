@@ -1,0 +1,19 @@
+{
+  "name": "cargo-bot-server",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Cargo Bot: ระบบบันทึกการขนส่งอุปกรณ์ (Node.js + MySQL)",
+  "main": "src/server.js",
+  "engines": { "node": ">=20.6" },
+  "scripts": {
+    "db:up": "docker compose -f ../docker-compose.yml --env-file .env up -d mysql",
+    "db:down": "docker compose -f ../docker-compose.yml --env-file .env stop mysql",
+    "start": "node --env-file=.env src/server.js",
+    "dev": "node --env-file=.env --watch src/server.js",
+    "passwd": "node --env-file=.env src/cli.js passwd"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "mysql2": "^3.11.5"
+  }
+}

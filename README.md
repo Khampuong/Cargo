@@ -1,5 +1,43 @@
 # Cargo Bot — ระบบบันทึกการขนส่งอุปกรณ์
 
+## เวอร์ชันหลัก: Node.js + MySQL ([server/](server/))
+
+```
+ หน้าแอป (gas/Index.html) ── POST /rpc ──┐
+                                         ├──> Node.js (Express, server/src) ──> MySQL 8 (docker: cargo-mysql, พอร์ต 3307)
+ บอร์ด ESP32 ─── HTTP /api + Token ──────┘                                 └─> server/data/photos (ภาพถ่าย)
+```
+
+ติดตั้งและรัน (ต้องมี Node.js 20.6+ และ Docker):
+
+```sh
+cd server
+cp .env.example .env        # แล้วตั้ง DB_PASSWORD / DB_ROOT_PASSWORD
+npm install
+npm run db:up               # เปิด MySQL (สร้างตารางให้เองตอนเซิร์ฟเวอร์เริ่ม)
+npm run passwd -- phatthachada.k@gmail.com <รหัสผ่าน>   # ตั้งรหัสผ่านผู้ดูแลครั้งแรก
+npm start                   # http://localhost:3100
+```
+
+| ไฟล์ | หน้าที่ |
+|---|---|
+| [server/src/actions.js](server/src/actions.js) | คำสั่งทั้งหมดของระบบ ย้ายมาจาก Code.gs (เข้าสู่ระบบ, บันทึก, ผู้ดูแล, ESP32) |
+| [server/src/server.js](server/src/server.js) | เว็บเซิร์ฟเวอร์: `/` หน้าแอป, `/rpc`, `/api` (และ `/exec`) สำหรับ ESP32, `/photos`, `/health` |
+| [server/src/db.js](server/src/db.js) | เชื่อมต่อ MySQL (mysql2) และสร้างตารางจาก [server/schema.sql](server/schema.sql) |
+| [server/src/cli.js](server/src/cli.js) | `npm run passwd` ตั้งรหัสผ่านจากเครื่องเซิร์ฟเวอร์ |
+| [docker-compose.yml](docker-compose.yml) | MySQL 8 ของระบบนี้ (แยกจากฐานข้อมูลอื่นในเครื่อง) |
+
+- **ตาราง:** `users`, `products`, `moves`, `places`, `assignments`, `devices`, `refs`, `sessions`, `settings` (คำอธิบายทุกฟิลด์อยู่ใน COMMENT ของ [schema.sql](server/schema.sql))
+- **เวลา:** เก็บเป็น UTC แสดงเป็นเวลาไทย
+- **เข้าสู่ระบบ:** อีเมล + รหัสผ่าน หรือ Google Sign-In (ตั้ง Client ID ในหน้าผู้ดูแลระบบ)
+  - Continue with Google ผ่าน `gas-login` ใช้ได้เมื่อตั้ง `LOGIN_SECRET` และ `LOGIN_APP_URL` ใน `.env` และตั้ง `MAIN_APP_URL` ใน `gas-login/Secret.gs` เป็น URL สาธารณะของเซิร์ฟเวอร์นี้
+  - การเข้าด้วยบัญชี Gmail ที่เปิดอยู่ใช้ได้เฉพาะเวอร์ชัน Apps Script
+- **ESP32:** ตั้ง `API_URL` ใน `config.h` เป็น `http://<เซิร์ฟเวอร์>:3100/api` และใช้ Token ระบบเหมือนเดิม
+- **เปิดให้เข้าจากอินเทอร์เน็ต:** `cloudflared tunnel --url http://localhost:3100`
+- **API:** รูปแบบคำขอและคำตอบเหมือนเวอร์ชัน Apps Script ทุกคำสั่ง หน้าแอปจึงใช้ไฟล์เดิม
+
+## เวอร์ชันเดิม: Google Apps Script + Google Sheet ([gas/](gas/))
+
 ```
  หน้าแอป (URL ของ Web app) ── google.script.run ──┐
                                                   ├──> Google Apps Script ──> Google Sheet "Database Cargo (ระบบบันทึกการขนส่ง)"
@@ -21,6 +59,61 @@
 | [dev/dump_schema.js](dev/dump_schema.js), [dev/build_db.py](dev/build_db.py) | สร้างไฟล์ฐานข้อมูลเปล่า (.xlsx) จากโครงสร้างใน Code.gs |
 
 ## เข้าสู่ระบบ
+
+หน้าเข้าสู่ระบบมี 2 ทาง: **Continue with Google** หรือ **Email address + Password**
+
+**เข้าระบบรอบเดียว:**
+- เข้าแล้วอยู่ในระบบต่อไปในเบราว์เซอร์นั้น แม้ปิดเบราว์เซอร์แล้วเปิดใหม่ จนกว่าจะกด **ออกจากระบบ**
+- ถ้าไม่ได้ใช้งานเกิน 1 ปี (`SESSION_DAYS`) หรือผู้ดูแลปิดหรือลบบัญชี ต้องเข้าใหม่
+- เซสชันเก็บใน Script Properties (คีย์ `S_<แฮช>`) และแคช
+
+**อีเมล + รหัสผ่าน:**
+- ตั้งรหัสผ่านได้ 2 แบบ:
+  - ผู้ดูแลตั้งให้ในเมนู **บัญชีผู้ใช้งาน** (ช่องรหัสผ่าน)
+  - ผู้ใช้ตั้งเองที่ปุ่ม **ตั้งรหัสผ่าน** มุมขวาบน หลังเข้าด้วย Google
+- รหัสผ่านยาว 8-128 ตัว เก็บเป็นค่าแฮช (`Users.PassHash` = `v1$salt$hash`) ไม่เก็บรหัสจริง
+- ใส่ผิด 5 ครั้ง อีเมลนั้นถูกล็อก 15 นาที
+- บัญชีที่ยังไม่ได้ตั้งรหัสผ่าน เข้าได้ด้วย Google อย่างเดียว
+
+**เข้าสู่ระบบด้วยอีเมล Google ผ่านอินเทอร์เน็ต (ใช้กับทุกคน ทั้งพนักงานและผู้ดูแล):**
+1. กดปุ่ม **เข้าสู่ระบบด้วย Google** ระบบจะเปิดแอปยืนยันตัวตน `Cargo Bot Login` (โฟลเดอร์ `gas-login/`)
+2. Google ยืนยันว่าเป็นเจ้าของอีเมลจริง ครั้งแรกจะถามสิทธิ์ "ดูอีเมลของคุณ" อย่างเดียว
+3. กด **เข้าสู่ Cargo Bot** ระบบตรวจว่าอีเมลลงทะเบียนในชีต `Users` แล้วจึงเข้าให้
+
+- แอปยืนยันตัวตนส่งอีเมลกลับมาเป็นลิงก์ที่เซ็นด้วยคีย์ลับ `LOGIN_SECRET` ใช้ได้ครั้งเดียวภายใน 5 นาที ปลอมหรือนำมาใช้ซ้ำไม่ได้
+- เมื่อตั้งแอปนี้แล้ว การพิมพ์อีเมลอย่างเดียวจะถูกปิด
+- คีย์ลับและ URL อยู่ใน `gas/Secret.gs` และ `gas-login/Secret.gs` (ไม่เก็บใน git) ถ้าสร้างใหม่ต้องให้ทั้งสองไฟล์ตรงกัน
+
+Deploy ด้วย [clasp](https://github.com/google/clasp) (`npm i -g @google/clasp`, `clasp login`):
+
+| โฟลเดอร์ | โปรเจกต์ Apps Script | Deploy แบบ |
+|---|---|---|
+| `gas/` (`.clasp.json` ที่ราก) | Cargo Bot ขนส่งอุปกรณ์ | Execute as Me, Anyone (ESP32 เรียกได้) |
+| `gas-login/` | Cargo Bot Login | Execute as User accessing, Anyone with a Google account |
+
+```sh
+clasp push --force && clasp update-deployment <deploymentId ของ gas>
+cd gas-login && clasp push --force && clasp update-deployment <deploymentId ของ gas-login>
+```
+
+**เข้าด้วยบัญชี Gmail ที่เปิดอยู่ (ง่ายที่สุด ไม่ต้องตั้งค่า Client ID):**
+- เปิดหน้าแอปแล้ว Apps Script ส่งอีเมลของบัญชี Google ที่ลงชื่ออยู่ในเบราว์เซอร์มาให้เอง ถ้าอีเมลนี้ลงทะเบียนในชีต `Users` แล้ว ระบบจะ**เข้าให้ทันที** ไม่ต้องพิมพ์ ไม่ต้องกดอะไร
+- หลังกด **ออกจากระบบ** หน้าเข้าสู่ระบบจะมีปุ่ม "เข้าใช้ด้วย อีเมล@gmail.com" ให้กดเข้าใหม่
+- ถ้าอีเมลนั้นยังไม่ได้ลงทะเบียน ระบบจะแจ้ง และแสดงวิธีเข้าระบบแบบอื่นด้านล่าง
+- อีเมลนี้ Google ยืนยันให้เอง ปลอมไม่ได้ และรับเฉพาะจากหน้าเว็บ (`google.script.run`) ไม่รับจาก `/exec` ที่ ESP32 เรียก
+
+Google บอกอีเมลผู้เปิดเว็บให้ Apps Script เฉพาะบางกรณี ขึ้นกับการ Deploy:
+
+| Deploy แบบ | ใครเข้าด้วย Gmail ได้ |
+|---|---|
+| Execute as **Me** (ค่าในโปรเจกต์นี้) | เจ้าของสคริปต์ (ผู้ดูแล) และบัญชีในโดเมน Google Workspace เดียวกัน |
+| Execute as **User accessing the web app** + Access: Anyone with a Google account | ทุกบัญชี Gmail |
+
+- **ข้อควรรู้ของแบบที่ 2:** สคริปต์จะทำงานด้วยสิทธิ์ของพนักงานแต่ละคน
+  - ต้องแชร์ Google Sheet ให้พนักงานแก้ไขได้
+  - พนักงานต้องกดอนุญาตสิทธิ์ครั้งแรก
+  - ESP32 เรียก Deploy นี้ไม่ได้ (ต้องล็อกอิน) ให้สร้าง Deploy แยกอีกอันแบบ Execute as Me + Anyone สำหรับ ESP32 และ Cloudflare Worker
+- **คนที่ระบบหาอีเมลไม่เจอ** (เช่น บัญชี gmail.com ทั่วไป ตอน Deploy แบบ Execute as Me) ยังเข้าด้วย Google Sign-In ด้านล่างได้
 
 **ยืนยันตัวตนด้วย Google (Sign in with Google):**
 - กดปุ่ม Google แล้วเลือกบัญชี
@@ -193,4 +286,6 @@ node dev/preview.js      # เปิด http://localhost:8080
   - เปิดใช้ Google Sign-In ไว้ตั้งแต่เริ่ม
   - กดปุ่ม "(จำลอง)" แล้วจะได้หน้าเลือกบัญชี ซึ่งมีบัญชีในชีต Users และผู้ดูแลถาวร
   - One Tap จำลองจำบัญชีล่าสุด แล้วเข้าระบบให้เอง
+- `MOCK_LOGIN_APP=1 node dev/preview.js` จำลองแอปยืนยันตัวตน `gas-login` ที่ `/dev/login`
+- `GMAIL_USER=อีเมล node dev/preview.js` จำลองบัญชี Gmail ที่เปิดอยู่ในเบราว์เซอร์ (เปิดหน้าแล้วเข้าระบบให้เอง)
 - API สำหรับทดสอบบอร์ดอยู่ที่ `http://localhost:8080/exec`

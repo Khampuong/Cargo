@@ -122,6 +122,13 @@
   .login p { margin:0; color:var(--muted); font-size:.88rem; }
   .login .err { color:var(--err); min-height:1.4em; }
   .gbtn { display:flex; justify-content:center; min-height:44px; }
+  .lhead { text-align:center; } .lhead h2 { margin:0; font-size:1.25rem; }
+  .sso { display:flex; align-items:center; justify-content:center; gap:10px; width:100%; padding:10px 12px; border-radius:8px;
+    border:1px solid var(--line); background:var(--surface); color:var(--fg); font:inherit; font-weight:600; text-decoration:none; cursor:pointer; }
+  .sso:hover { background:var(--chip); }
+  .glogo { width:18px; height:18px; flex:none; display:inline-flex; } .glogo svg { width:100%; height:100%; }
+  button.go { background:#2b2f36; color:#fff; border-color:transparent; padding:11px 12px; }
+  button.go:hover { background:#1c1f24; }
   .or { display:flex; align-items:center; gap:10px; color:var(--muted); font-size:.82rem; }
   .or::before, .or::after { content:''; flex:1; border-top:1px solid var(--line); }
   code.token { font-size:.8rem; }
@@ -207,18 +214,28 @@
   <div class="card lcard">
     <div class="lhero">
       <h1>Cargo Bot ขนส่งอุปกรณ์</h1>
-      <p>บันทึกการขนส่ง ติดตามเส้นทางรับ-ส่ง เก็บข้อมูลใน Google Sheet</p>
+      <p>บันทึกการขนส่ง ติดตามเส้นทางรับ-ส่ง เก็บข้อมูลในฐานข้อมูล</p>
       <div id="loginArt"></div>
     </div>
-    <form class="fields" id="emailForm" hidden>
-      <p>เข้าสู่ระบบด้วยอีเมลที่ผู้ดูแลระบบลงทะเบียนไว้</p>
-      <div><label class="label" for="lEmail">อีเมล</label><input type="email" id="lEmail" autocomplete="email" autocapitalize="off" required></div>
-      <button class="b primary" type="submit" id="lSend">เข้าสู่ระบบ</button>
-    </form>
+    <div class="lhead">
+      <h2>เข้าสู่ระบบ</h2>
+      <p>ยินดีต้อนรับ! ใช้อีเมลที่ผู้ดูแลระบบลงทะเบียนไว้</p>
+    </div>
+    <div id="gmBox" class="fields" hidden>
+      <button class="sso" type="button" id="gmBtn"><span class="glogo" aria-hidden="true"></span>ดำเนินการต่อในชื่อ&nbsp;<b id="gmEmail"></b></button>
+    </div>
+    <div id="gaBox" class="fields" hidden>
+      <a class="sso" id="gaLink" target="_top" rel="noopener"><span class="glogo" aria-hidden="true"></span>Continue with Google</a>
+    </div>
     <div id="gBox" class="fields" hidden>
-      <p>ยืนยันตัวตนด้วยบัญชี Google ของคุณ (ต้องเป็นอีเมลที่ผู้ดูแลระบบลงทะเบียนไว้)</p>
       <div id="gBtn" class="gbtn"></div>
     </div>
+    <div class="or" id="orLine" hidden>หรือ</div>
+    <form class="fields" id="emailForm">
+      <div><label class="label" for="lEmail">Email address</label><input type="email" id="lEmail" autocomplete="email" autocapitalize="off" placeholder="name@gmail.com" required></div>
+      <div><label class="label" for="lPass">Password</label><input type="password" id="lPass" autocomplete="current-password" placeholder="ใส่รหัสผ่าน"></div>
+      <button class="b go" type="submit" id="lSend">Continue <span aria-hidden="true">▸</span></button>
+    </form>
     <div class="note" id="lLoading">กำลังโหลด...</div>
     <div class="err" id="lMsg" role="alert"></div>
   </div>
@@ -232,9 +249,19 @@
     </div>
     <div class="who">
       <span class="chip" id="whoName">-</span><span class="chip admin" id="whoRole" hidden>ผู้ดูแลระบบ</span>
+      <button class="b sm" type="button" id="pwOpen">ตั้งรหัสผ่าน</button>
       <button class="b sm" type="button" id="logout">ออกจากระบบ</button>
     </div>
   </header>
+  <form class="card fields" id="pwForm" hidden style="max-width:420px;align-self:flex-end;width:100%">
+    <h2 style="margin:0">ตั้งรหัสผ่าน</h2>
+    <p class="note">ใช้เข้าระบบด้วยอีเมล + รหัสผ่าน (ยังเข้าด้วย Google ได้เหมือนเดิม)</p>
+    <div><label class="label" for="pwOld">รหัสผ่านเดิม (ถ้าเคยตั้งไว้)</label><input type="password" id="pwOld" autocomplete="current-password"></div>
+    <div><label class="label" for="pwNew">รหัสผ่านใหม่ (อย่างน้อย 8 ตัว)</label><input type="password" id="pwNew" autocomplete="new-password" minlength="8" required></div>
+    <div><label class="label" for="pwNew2">ยืนยันรหัสผ่านใหม่</label><input type="password" id="pwNew2" autocomplete="new-password" required></div>
+    <div class="row"><button class="b" type="button" id="pwCancel">ยกเลิก</button><button class="b primary" type="submit" id="pwSave">บันทึกรหัสผ่าน</button></div>
+    <div class="status" id="pwStatus"></div>
+  </form>
 
   <!-- แบนเนอร์ -->
   <section class="hero" aria-label="ภาพรวมวันนี้">
@@ -242,7 +269,7 @@
     <div class="hero-text">
       <div class="hello">สวัสดี <span id="heroName">-</span></div>
       <h1>ระบบบันทึกการขนส่งอุปกรณ์</h1>
-      <p>บันทึกการขนส่ง ติดตามเส้นทางรับ-ส่ง และดูผลได้ในที่เดียว ข้อมูลทั้งหมดเก็บใน Google Sheet</p>
+      <p>บันทึกการขนส่ง ติดตามเส้นทางรับ-ส่ง และดูผลได้ในที่เดียว ข้อมูลทั้งหมดเก็บในฐานข้อมูล</p>
       <div class="hero-stats">
         <div><b id="hsQty">-</b><span>ชิ้นที่ขนวันนี้</span></div>
         <div><b id="hsTrips">-</b><span>เที่ยววันนี้</span></div>
@@ -348,7 +375,7 @@
         <button data-r="30d" aria-pressed="false">30 วัน</button>
         <button data-r="all" aria-pressed="false">ทั้งหมด</button>
       </div>
-      <span class="upd">ข้อมูลจาก Google Sheet ล่าสุด <b id="updated">-</b> · รีเฟรชทุก 15 วินาที</span>
+      <span class="upd">ข้อมูลล่าสุด <b id="updated">-</b> · รีเฟรชทุก 15 วินาที</span>
     </div>
     <div class="kpis">
       <div class="card kpi"><div class="label">ขนส่งแล้ว (ช่วงที่เลือก)</div><div class="v"><span id="kQty">-</span><small>ชิ้น</small></div></div>
@@ -421,7 +448,7 @@
         <div id="gTestBox" hidden><p class="note">กดปุ่ม Google ด้านล่างแล้วเลือกบัญชี <b id="gMe">-</b> ถ้าผ่าน ระบบจะเปิดใช้ Google Sign-In ทันที</p><div id="gTestBtn" class="gbtn" style="justify-content:flex-start"></div></div>
       </div>
       <div id="gOn" class="fields" hidden>
-        <p class="note">เปิดใช้แล้ว ทุกคนต้องกดปุ่ม Google และใช้บัญชีที่อีเมลตรงกับชีต Users ส่วนการเข้าระบบด้วยการพิมพ์อีเมลอย่างเดียวถูกปิดแล้ว</p>
+        <p class="note">เปิดใช้แล้ว ทุกคนต้องกดปุ่ม Google และใช้บัญชีที่ลงทะเบียนไว้ ส่วนการเข้าระบบด้วยการพิมพ์อีเมลอย่างเดียวถูกปิดแล้ว</p>
         <div><div class="label">Client ID</div><div class="token" id="gCurrent">-</div></div>
         <button class="b danger" type="button" id="gDisable" style="max-width:320px">ปิด Google Sign-In (กลับไปใช้อีเมลอย่างเดียว)</button>
       </div>
@@ -511,14 +538,16 @@
       <div class="card">
         <div class="bar" style="margin-bottom:8px"><h2 style="margin:0">บัญชีผู้ใช้งาน</h2>
           <button class="b primary sm" type="button" id="uNew">+ เพิ่มบัญชี</button></div>
-        <p class="note" style="margin-bottom:8px">ลงทะเบียนอีเมลอย่างเดียว ไม่ต้องตั้งรหัสผ่าน เจ้าของอีเมลเข้าระบบด้วยบัญชี Google ของอีเมลนี้ (เมื่อเปิด Google Sign-In)</p>
+        <p class="note" style="margin-bottom:8px">เจ้าของอีเมลเข้าระบบด้วย Google ได้เลย ถ้าต้องการให้เข้าด้วยอีเมล + รหัสผ่านด้วย ให้ตั้งรหัสผ่านให้ (หรือให้เขาตั้งเองที่ปุ่ม "ตั้งรหัสผ่าน")</p>
         <form class="box" id="uForm" hidden>
           <div class="form-grid">
             <div><label class="label" for="uUser">อีเมล</label><input type="email" id="uUser" autocomplete="off" autocapitalize="off"></div>
             <div><label class="label" for="uName">ชื่อ-นามสกุล</label><input type="text" id="uName" autocomplete="off"></div>
             <div><label class="label" for="uRole">สิทธิ์</label><select id="uRole"><option value="user">พนักงาน</option><option value="admin">ผู้ดูแลระบบ</option></select></div>
+            <div><label class="label" for="uPass">รหัสผ่าน <span class="note" id="uPassNote">(ไม่บังคับ อย่างน้อย 8 ตัว)</span></label><input type="password" id="uPass" autocomplete="new-password"></div>
           </div>
           <label class="check"><input type="checkbox" id="uActive" checked> เปิดใช้งานบัญชี</label>
+          <label class="check" id="uClearWrap" hidden><input type="checkbox" id="uClear"> ลบรหัสผ่าน (เข้าได้ด้วย Google เท่านั้น)</label>
           <div class="row">
             <button class="b" type="button" id="uCancel">ยกเลิก</button>
             <button class="b primary" type="submit" id="uSave">บันทึกบัญชี</button>
@@ -526,7 +555,7 @@
           <div class="status" id="uStatus"></div>
         </form>
         <div class="scroll"><table>
-          <thead><tr><th>อีเมล</th><th>ชื่อ</th><th>สิทธิ์</th><th>สถานะ</th><th>เข้าระบบล่าสุด</th><th></th></tr></thead>
+          <thead><tr><th>อีเมล</th><th>ชื่อ</th><th>สิทธิ์</th><th>สถานะ</th><th>รหัสผ่าน</th><th>เข้าระบบล่าสุด</th><th></th></tr></thead>
           <tbody id="tUsers"></tbody></table></div>
       </div>
       <div class="card">
@@ -560,6 +589,7 @@ function setStatus(id, t, cls) { $(id).textContent = t; $(id).className = 'statu
 
 /* ---------- เรียกเซิร์ฟเวอร์ (Apps Script) ---------- */
 let session = store.get('cargo.session'), me = null;
+let LOGIN_TICKET = '<?= loginTicket ?>';   // ใส่โดย doGet เมื่อกลับมาจากแอปยืนยันตัวตน Google
 let PRODUCTS = [];
 const isAdmin = () => !!me && me.role === 'admin';
 function api(action, params) {
@@ -577,6 +607,8 @@ function api(action, params) {
       .rpc(action, params || {}, sent);
   });
 }
+// โลโก้ Google บนปุ่ม Continue with Google
+document.querySelectorAll('.glogo').forEach(el => { el.innerHTML = '<svg viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.3 0 24 0 14.6 0 6.6 5.4 2.6 13.3l7.9 6.2C12.4 13.6 17.7 9.5 24 9.5z"/><path fill="#4285F4" d="M46.1 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.4c-.5 2.9-2.2 5.3-4.6 6.9l7.4 5.7c4.3-4 6.9-9.9 6.9-17.1z"/><path fill="#FBBC05" d="M10.5 28.5c-.5-1.4-.8-2.9-.8-4.5s.3-3.1.8-4.5l-7.9-6.2C1 16.6 0 20.2 0 24s1 7.4 2.6 10.7l7.9-6.2z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.4-5.7c-2.1 1.4-4.8 2.3-8.5 2.3-6.3 0-11.6-4.1-13.5-9.8l-7.9 6.2C6.6 42.6 14.6 48 24 48z"/></svg>'; });
 function showOnly(id) { ['loginView', 'appView'].forEach(v => $(v).hidden = v !== id); }
 
 /* ---------- เข้าสู่ระบบด้วยอีเมล (อีเมลต้องลงทะเบียนในชีต Users) ---------- */
@@ -590,7 +622,8 @@ $('emailForm').addEventListener('submit', async e => {
   e.preventDefault();
   $('lSend').disabled = true; $('lMsg').textContent = '';
   try {
-    const r = await api('emailLogin', { email: $('lEmail').value.trim() });
+    const r = await api('emailLogin', { email: $('lEmail').value.trim(), password: $('lPass').value });
+    $('lPass').value = '';
     store.set('cargo.email', r.user.email);
     signedIn(r);
   } catch (err) { $('lMsg').textContent = err.message; }
@@ -615,8 +648,22 @@ async function loadGoogleButton() {
   let cfg;
   try { cfg = await api('authConfig'); } catch (e) { $('lLoading').textContent = 'เชื่อมต่อระบบไม่ได้ กรุณาลองใหม่'; return; }
   $('lLoading').hidden = true;
-  $('emailForm').hidden = !cfg.emailLogin; $('gBox').hidden = !cfg.googleClientId;
-  if (cfg.emailLogin) $('lEmail').focus();
+  $('gaBox').hidden = !cfg.loginAppUrl; if (cfg.loginAppUrl) $('gaLink').href = cfg.loginAppUrl;
+  // กลับมาจากแอปยืนยันตัวตนของ Google พร้อม ticket → เข้าระบบให้เอง (ใช้ได้ครั้งเดียว)
+  if (LOGIN_TICKET) {
+    const t = LOGIN_TICKET; LOGIN_TICKET = '';
+    $('lMsg').textContent = 'กำลังเข้าสู่ระบบ...';
+    try { store.set('cargo.noAutoGmail', null); signedIn(await api('ticketLogin', { ticket: t })); return; }
+    catch (err) { $('lMsg').textContent = err.message; }
+  }
+  // ฟอร์มอีเมล + รหัสผ่านแสดงเสมอ (ยังไม่เปิดการยืนยันด้วย Google = ไม่ใส่รหัสผ่านก็ได้)
+  $('lPass').required = !cfg.emailLogin;
+  $('lPass').placeholder = cfg.emailLogin ? 'ไม่ต้องใส่ ถ้ายังไม่ได้ตั้งรหัสผ่าน' : 'ใส่รหัสผ่าน';
+  $('gBox').hidden = !cfg.googleClientId;
+  $('orLine').hidden = !(cfg.loginAppUrl || cfg.gmail || cfg.googleClientId);
+  // มีบัญชี Gmail เปิดอยู่ (Google ยืนยันให้แล้ว) → เข้าให้เองทันที ไม่ต้องพิมพ์อีเมล ไม่ต้องกดปุ่ม
+  $('gmBox').hidden = !cfg.gmail; $('gmEmail').textContent = cfg.gmail || '';
+  if (cfg.gmail && !store.get('cargo.noAutoGmail') && await gmailLogin()) return;
   if (!cfg.googleClientId) return;
   try {
     await renderGoogleButton($('gBtn'), cfg.googleClientId, async credential => {
@@ -625,6 +672,13 @@ async function loadGoogleButton() {
     }, true);
   } catch (e) { $('lMsg').textContent = e.message + ' กรุณาลองโหลดหน้าใหม่'; }
 }
+async function gmailLogin() {
+  $('gmBtn').disabled = true; $('lMsg').textContent = '';
+  try { store.set('cargo.noAutoGmail', null); signedIn(await api('gmailLogin')); return true; }
+  catch (err) { $('lMsg').textContent = err.message; return false; }
+  finally { $('gmBtn').disabled = false; }
+}
+$('gmBtn').onclick = () => gmailLogin();
 /* autoPrompt = แสดง One Tap ทันที: คนที่เคยเลือกบัญชีแล้วจะเข้าระบบเองโดยไม่ต้องกดหรือพิมพ์อีเมล
    (หลังกดออกจากระบบ Google จะไม่เข้าให้อัตโนมัติจนกว่าจะเลือกบัญชีเองอีกครั้ง) ถ้า One Tap ใช้ไม่ได้ ยังมีปุ่ม Google */
 async function renderGoogleButton(el, clientId, onCredential, autoPrompt) {
@@ -637,9 +691,23 @@ async function renderGoogleButton(el, clientId, onCredential, autoPrompt) {
   google.accounts.id.renderButton(el, { theme: 'outline', size: 'large', text: 'signin_with', locale: 'th', width: 300 });
   if (autoPrompt) try { google.accounts.id.prompt(); } catch (e) { /* ใช้ปุ่มแทน */ }
 }
+$('pwOpen').onclick = () => { $('pwForm').hidden = !$('pwForm').hidden; setStatus('pwStatus', ''); if (!$('pwForm').hidden) $('pwNew').focus(); };
+$('pwCancel').onclick = () => { $('pwForm').hidden = true; $('pwForm').reset(); };
+$('pwForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  if ($('pwNew').value !== $('pwNew2').value) return setStatus('pwStatus', 'รหัสผ่านใหม่ทั้งสองช่องไม่ตรงกัน', 'err');
+  $('pwSave').disabled = true;
+  try {
+    await api('setMyPassword', { oldPassword: $('pwOld').value, password: $('pwNew').value });
+    $('pwForm').reset(); setStatus('pwStatus', 'ตั้งรหัสผ่านแล้ว ครั้งหน้าเข้าด้วยอีเมล + รหัสผ่านได้', 'ok');
+  } catch (err) { setStatus('pwStatus', err.message, 'err'); }
+  finally { $('pwSave').disabled = false; }
+});
 $('logout').onclick = () => {
+  $('pwForm').hidden = true; $('pwForm').reset();
   api('logout').catch(() => {});
   try { google.accounts.id.disableAutoSelect(); } catch (e) {}
+  store.set('cargo.noAutoGmail', '1');   // ออกจากระบบแล้วไม่เข้าเองด้วย Gmail จนกว่าจะกดปุ่ม
   showLogin();
 };
 
@@ -662,7 +730,7 @@ async function start(user) {
   if (!started) { started = true; initVision(); }
 }
 (async function boot() {
-  if (session) { try { const r = await api('me'); start(r.user); return; } catch (e) { if (e.code === 'unauthorized') return; } }
+  if (session && !LOGIN_TICKET) { try { const r = await api('me'); start(r.user); return; } catch (e) { if (e.code === 'unauthorized') return; } }
   showLogin();
 })();
 
@@ -777,7 +845,7 @@ $('save').onclick = async () => {
   if (missing.length) { missing.forEach(id => $(id).classList.add('need')); $(missing[0]).focus();
     message('err', 'กรุณากรอกข้อมูลการขนส่งให้ครบ', 'ชื่อผู้ขนส่ง สถานที่รับ และสถานที่ส่ง'); beep(220, 300); return; }
   const teach = method === 'ภาพถ่าย' && photoImg && $('teach').checked, img = photoImg, prod = current;
-  $('save').disabled = true; $('save').textContent = 'กำลังบันทึกลง Google Sheet...';
+  $('save').disabled = true; $('save').textContent = 'กำลังบันทึก...';
   try {
     const r = await api('saveMove', { code: prod.code, qty: $('qty').value, mover, pickup, dropoff, method, score, photo: img ? shrink(img, 800) : '', reqId: newId(), assignId: selectedAssign || '' });
     selectAssign(null); loadHeroStats();
@@ -1026,7 +1094,7 @@ async function renderAdmin() {
     if (cur) sel.value = cur;
     fill('tUsers', u.users.map(x => tr => {
       cell(tr, x.email); cell(tr, x.name); cell(tr, ROLE_TH[x.role] + (x.fixed ? ' (ถาวร)' : ''));
-      onOff(tr, x.active, 'ใช้งาน', 'ปิด'); cell(tr, x.lastLogin || '-');
+      onOff(tr, x.active, 'ใช้งาน', 'ปิด'); cell(tr, x.hasPassword ? 'ตั้งแล้ว' : 'Google เท่านั้น'); cell(tr, x.lastLogin || '-');
       const acts = document.createElement('div'); acts.className = 'acts';
       acts.appendChild(btn('แก้ไข', () => openUser(x)));
       if (!x.fixed && x.email !== me.email) acts.appendChild(delBtn(async () => {
@@ -1177,7 +1245,7 @@ $('aForm').addEventListener('submit', async e => {
 
 /* บันทึกการขนส่งของพนักงาน: ค้นหา / เพิ่ม / แก้ไข / ลบ */
 async function loadMoves() {
-  $('mCount').textContent = 'กำลังโหลดจาก Google Sheet...';
+  $('mCount').textContent = 'กำลังโหลด...';
   try {
     const r = await api('moves', { from: $('fFrom').value, to: $('fTo').value, q: $('fQ').value });
     const total = r.moves.reduce((s, m) => s + m.qty, 0);
@@ -1232,6 +1300,8 @@ function openUser(u) {
   $('uUser').value = u ? u.email : ''; $('uUser').disabled = !!u;
   $('uName').value = u ? u.name : ''; $('uRole').value = u ? u.role : 'user';
   $('uActive').checked = u ? u.active : true;
+  $('uPass').value = ''; $('uClear').checked = false; $('uClearWrap').hidden = !(u && u.hasPassword);
+  $('uPassNote').textContent = u && u.hasPassword ? '(ว่าง = ใช้รหัสเดิม)' : '(ไม่บังคับ อย่างน้อย 8 ตัว)';
   $('uRole').disabled = $('uActive').disabled = !!(u && u.fixed);
   (u ? $('uName') : $('uUser')).focus();
 }
@@ -1240,7 +1310,9 @@ $('uCancel').onclick = () => { $('uForm').hidden = true; };
 $('uForm').addEventListener('submit', async e => {
   e.preventDefault(); $('uSave').disabled = true;
   try {
-    await api('saveUser', { isNew: !editingUser, email: $('uUser').value, name: $('uName').value, role: $('uRole').value, active: $('uActive').checked });
+    await api('saveUser', { isNew: !editingUser, email: $('uUser').value, name: $('uName').value, role: $('uRole').value, active: $('uActive').checked,
+      password: $('uPass').value, clearPassword: $('uClear').checked });
+    $('uPass').value = '';
     $('uForm').hidden = true; setStatus('uStatus', 'บันทึกบัญชีแล้ว', 'ok'); await renderAdmin();
     if (editingUser && editingUser.email === me.email) { me.name = $('uName').value.trim(); $('whoName').textContent = me.name; }
   } catch (err) { setStatus('uStatus', err.message, 'err'); }
